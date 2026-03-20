@@ -55,20 +55,24 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: "backend/pyproject.toml"
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
       - name: Install dependencies
         working-directory: backend
-        run: |
-          pip install -e ".[dev]"
+        run: uv sync --extra dev
 
       - name: Lint with ruff
         working-directory: backend
         run: |
-          ruff check app/
-          ruff format --check app/
+          uv run ruff check app/
+          uv run ruff format --check app/
 
   # ============================================================
   # Docker Build & Push

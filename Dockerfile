@@ -16,28 +16,15 @@ RUN pnpm build
 # ============================================================
 FROM python:3.12-slim AS backend
 
+# Install uv
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+
 WORKDIR /app
 
-# Install dependencies
+# Copy project files and install dependencies
 COPY backend/pyproject.toml ./
-RUN pip install --no-cache-dir -e . 2>/dev/null || pip install --no-cache-dir \
-    "fastapi>=0.115.0" \
-    "uvicorn[standard]>=0.30.0" \
-    "httpx>=0.27.0" \
-    "python-jose[cryptography]>=3.3.0" \
-    "authlib>=1.3.0" \
-    "itsdangerous>=2.2.0" \
-    "python-multipart>=0.0.9" \
-    "websockets>=13.0" \
-    "redis>=5.0.0" \
-    "pydantic>=2.9.0" \
-    "pydantic-settings>=2.5.0" \
-    "sqlalchemy>=2.0.0" \
-    "aiosqlite>=0.20.0" \
-    "alembic>=1.13.0"
-
-# Copy backend code
 COPY backend/app ./app
+RUN uv sync --no-dev
 
 # Copy frontend build
 COPY --from=frontend-builder /app/frontend/dist ./static

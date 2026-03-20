@@ -5,30 +5,6 @@
 > [!WARNING]
 > **全部内容由 Claude Opus 4.6 自动编写测试，不作为任何可靠依据。**
 
-> [!NOTE]
->
-> 生成提示词
->
-> ```text
-> 写一个对接 oryx 的前后端，实现以下功能：
->
-> - OAuth2 登录 / 注册（此处对接 Authentik）
-> - 弹幕（聊天） -> 需要登录
-> - 播放直播流，配置为自动获取在线的直播流，并可供选择流> 名称和流格式，如果直播加密则要求鉴权或输入密钥
->
-> 管理员：
-> - 配置一个 OAuth2 组用于管理员列表
-> - 控制 oryx 可以控制的全部东西（记得按需分类）
->
-> 因为后续要套 CDN，CDN 拉流和获取资源需要做
->
-> 请在这个文件夹开始你的全部操作，前端为 Vite，请配一个好> 看的组件库，后端建议使用 Python 3.12
->
-> 配置好 CI 文件，方便编译生成产物
->
-> 配置 Docker 需要的配置，方便作为容器运行
-> ```
-
 ## 功能特性
 
 ### 用户端
@@ -69,7 +45,7 @@
 ### 前提条件
 
 - Node.js 22+ / pnpm
-- Python 3.12+
+- Python 3.12+ / [uv](https://docs.astral.sh/uv/)
 - Authentik OAuth2 应用配置
 - Oryx/SRS 服务运行中
 
@@ -82,8 +58,8 @@ cd backend
 cp .env.example .env
 # 编辑 .env 填入你的配置
 
-pip install -e ".[dev]"
-uvicorn app.main:app --reload --port 8000
+uv sync --extra dev
+uv run uvicorn app.main:app --reload --port 8000
 ```
 
 **2. 前端**
