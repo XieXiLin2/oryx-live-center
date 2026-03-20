@@ -1,0 +1,39 @@
+[project]
+name = "oryx-live-center"
+version = "1.0.0"
+description = "Oryx Live Center - Live streaming management platform"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
+    "httpx>=0.27.0",
+    "python-jose[cryptography]>=3.3.0",
+    "authlib>=1.3.0",
+    "itsdangerous>=2.2.0",
+    "python-multipart>=0.0.9",
+    "websockets>=13.0",
+    "redis>=5.0.0",
+    "pydantic>=2.9.0",
+    "pydantic-settings>=2.5.0",
+    "sqlalchemy>=2.0.0",
+    "aiosqlite>=0.20.0",
+    "alembic>=1.13.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.6.0",
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.24.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W"]

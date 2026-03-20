@@ -1,0 +1,29 @@
+version: "3.8"
+
+services:
+  app:
+    build: .
+    container_name: oryx-live-center
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - app-data:/app/data
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=sqlite+aiosqlite:///./data/app.db
+      - DEBUG=false
+    depends_on:
+      - redis
+
+  redis:
+    image: redis:7-alpine
+    container_name: oryx-live-center-redis
+    restart: unless-stopped
+    volumes:
+      - redis-data:/data
+
+volumes:
+  app-data:
+  redis-data:
