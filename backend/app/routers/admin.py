@@ -1,7 +1,6 @@
 """Admin routes - Oryx management, user management, system config."""
 
 import logging
-from typing import Any
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -26,6 +25,7 @@ router = APIRouter(prefix="/api/admin", tags=["admin"])
 # Oryx API Proxy Helper
 # ============================================================
 
+
 async def _oryx_request(method: str, path: str, **kwargs) -> dict:
     """Make a request to the Oryx/SRS API."""
     url = f"{settings.oryx_api_url}{path}"
@@ -44,6 +44,7 @@ async def _oryx_request(method: str, path: str, **kwargs) -> dict:
 # User Management
 # ============================================================
 
+
 @router.get("/users", response_model=UserListResponse)
 async def list_users(
     limit: int = Query(50, ge=1, le=200),
@@ -57,19 +58,13 @@ async def list_users(
     count_query = select(func.count()).select_from(User)
 
     if search:
-        query = query.where(
-            User.username.ilike(f"%{search}%") | User.display_name.ilike(f"%{search}%")
-        )
-        count_query = count_query.where(
-            User.username.ilike(f"%{search}%") | User.display_name.ilike(f"%{search}%")
-        )
+        query = query.where(User.username.ilike(f"%{search}%") | User.display_name.ilike(f"%{search}%"))
+        count_query = count_query.where(User.username.ilike(f"%{search}%") | User.display_name.ilike(f"%{search}%"))
 
     count_result = await db.execute(count_query)
     total = count_result.scalar() or 0
 
-    result = await db.execute(
-        query.order_by(User.created_at.desc()).offset(offset).limit(limit)
-    )
+    result = await db.execute(query.order_by(User.created_at.desc()).offset(offset).limit(limit))
     users = result.scalars().all()
 
     return UserListResponse(
@@ -117,6 +112,7 @@ async def delete_chat_message(
 # Oryx System Info
 # ============================================================
 
+
 @router.get("/oryx/system")
 async def get_oryx_system_info(admin: User = Depends(require_admin)):
     """Get Oryx system information."""
@@ -132,6 +128,7 @@ async def get_oryx_versions(admin: User = Depends(require_admin)):
 # ============================================================
 # Oryx Streams Management
 # ============================================================
+
 
 @router.get("/oryx/streams")
 async def get_oryx_streams(admin: User = Depends(require_admin)):
@@ -155,6 +152,7 @@ async def kick_oryx_client(client_id: str, admin: User = Depends(require_admin))
 # Oryx VHost Configuration
 # ============================================================
 
+
 @router.get("/oryx/vhosts")
 async def get_oryx_vhosts(admin: User = Depends(require_admin)):
     """Get all vhosts."""
@@ -170,6 +168,7 @@ async def get_oryx_vhost(vhost_id: str, admin: User = Depends(require_admin)):
 # ============================================================
 # Oryx DVR (Recording)
 # ============================================================
+
 
 @router.get("/oryx/dvr")
 async def get_oryx_dvr(admin: User = Depends(require_admin)):
@@ -187,6 +186,7 @@ async def update_oryx_dvr(config: dict, admin: User = Depends(require_admin)):
 # Oryx HLS Configuration
 # ============================================================
 
+
 @router.get("/oryx/hls")
 async def get_oryx_hls(admin: User = Depends(require_admin)):
     """Get HLS configuration."""
@@ -202,6 +202,7 @@ async def update_oryx_hls(config: dict, admin: User = Depends(require_admin)):
 # ============================================================
 # Oryx Forward (Relay/Restream)
 # ============================================================
+
 
 @router.get("/oryx/forward")
 async def get_oryx_forwards(admin: User = Depends(require_admin)):
@@ -225,6 +226,7 @@ async def delete_oryx_forward(forward_id: str, admin: User = Depends(require_adm
 # Oryx Transcode
 # ============================================================
 
+
 @router.get("/oryx/transcode")
 async def get_oryx_transcodes(admin: User = Depends(require_admin)):
     """Get transcode configurations."""
@@ -247,6 +249,7 @@ async def delete_oryx_transcode(transcode_id: str, admin: User = Depends(require
 # Oryx Callback (HTTP Hooks)
 # ============================================================
 
+
 @router.get("/oryx/hooks")
 async def get_oryx_hooks(admin: User = Depends(require_admin)):
     """Get HTTP callback/hook configurations."""
@@ -263,6 +266,7 @@ async def update_oryx_hooks(config: dict, admin: User = Depends(require_admin)):
 # Oryx Raw Config (for advanced usage)
 # ============================================================
 
+
 @router.get("/oryx/raw")
 async def get_oryx_raw_config(admin: User = Depends(require_admin)):
     """Get raw SRS config."""
@@ -278,6 +282,7 @@ async def update_oryx_raw_config(config: dict, admin: User = Depends(require_adm
 # ============================================================
 # CDN Configuration
 # ============================================================
+
 
 @router.get("/cdn/config")
 async def get_cdn_config(admin: User = Depends(require_admin)):

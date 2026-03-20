@@ -21,9 +21,7 @@ class User(Base):
     avatar_url: Mapped[str] = mapped_column(String(1024), default="")
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False)
     is_banned: Mapped[bool] = mapped_column(Boolean, default=False)
-    created_at: Mapped[datetime.datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     last_login: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
@@ -40,9 +38,7 @@ class ChatMessage(Base):
     display_name: Mapped[str] = mapped_column(String(255), default="")
     content: Mapped[str] = mapped_column(Text)
     stream_name: Mapped[str] = mapped_column(String(255), index=True, default="")
-    created_at: Mapped[datetime.datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class StreamConfig(Base):
@@ -56,9 +52,7 @@ class StreamConfig(Base):
     is_encrypted: Mapped[bool] = mapped_column(Boolean, default=False)
     encryption_key: Mapped[str] = mapped_column(String(1024), default="")
     require_auth: Mapped[bool] = mapped_column(Boolean, default=False)
-    created_at: Mapped[datetime.datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )

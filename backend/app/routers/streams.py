@@ -4,11 +4,11 @@ import logging
 from typing import Optional
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth import get_current_user, require_admin, require_user
+from app.auth import get_current_user, require_admin
 from app.config import settings
 from app.database import get_db
 from app.models import StreamConfig, User
@@ -76,9 +76,7 @@ async def list_streams(
         app = s.get("app", "live")
 
         # Check stream config
-        result = await db.execute(
-            select(StreamConfig).where(StreamConfig.stream_name == name)
-        )
+        result = await db.execute(select(StreamConfig).where(StreamConfig.stream_name == name))
         config = result.scalar_one_or_none()
 
         display_name = name
@@ -93,17 +91,19 @@ async def list_streams(
         video = s.get("video", {})
         audio = s.get("audio", {})
 
-        streams.append(StreamInfo(
-            name=name,
-            display_name=display_name,
-            app=app,
-            video_codec=video.get("codec") if video else None,
-            audio_codec=audio.get("codec") if audio else None,
-            clients=s.get("clients", 0),
-            is_encrypted=is_encrypted,
-            require_auth=require_auth,
-            formats=_get_stream_formats(s),
-        ))
+        streams.append(
+            StreamInfo(
+                name=name,
+                display_name=display_name,
+                app=app,
+                video_codec=video.get("codec") if video else None,
+                audio_codec=audio.get("codec") if audio else None,
+                clients=s.get("clients", 0),
+                is_encrypted=is_encrypted,
+                require_auth=require_auth,
+                formats=_get_stream_formats(s),
+            )
+        )
 
     return StreamListResponse(streams=streams)
 
@@ -116,9 +116,7 @@ async def get_play_url(
 ):
     """Get play URL for a stream. Handles authentication and encryption."""
     # Check stream config
-    result = await db.execute(
-        select(StreamConfig).where(StreamConfig.stream_name == request.stream_name)
-    )
+    result = await db.execute(select(StreamConfig).where(StreamConfig.stream_name == request.stream_name))
     config = result.scalar_one_or_none()
 
     if config:
@@ -156,6 +154,7 @@ async def get_play_url(
 
 # ---- Admin: Stream Config ----
 
+
 @router.get("/config", response_model=list[StreamConfigResponse])
 async def list_stream_configs(
     db: AsyncSession = Depends(get_db),
@@ -175,9 +174,7 @@ async def update_stream_config(
     admin: User = Depends(require_admin),
 ):
     """Create or update stream configuration (admin only)."""
-    result = await db.execute(
-        select(StreamConfig).where(StreamConfig.stream_name == stream_name)
-    )
+    result = await db.execute(select(StreamConfig).where(StreamConfig.stream_name == stream_name))
     config = result.scalar_one_or_none()
 
     if config is None:
@@ -205,9 +202,7 @@ async def delete_stream_config(
     admin: User = Depends(require_admin),
 ):
     """Delete stream configuration (admin only)."""
-    result = await db.execute(
-        select(StreamConfig).where(StreamConfig.stream_name == stream_name)
-    )
+    result = await db.execute(select(StreamConfig).where(StreamConfig.stream_name == stream_name))
     config = result.scalar_one_or_none()
     if config is None:
         raise HTTPException(status_code=404, detail="Stream config not found")

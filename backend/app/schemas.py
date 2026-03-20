@@ -154,6 +154,7 @@ class OryxClientInfo(BaseModel):
 
 class OryxVhostConfig(BaseModel):
     """Generic vhost configuration."""
+
     config: dict = {}
 
 

@@ -1,6 +1,7 @@
 """FastAPI application entry point."""
 
 import logging
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -62,8 +63,6 @@ async def health_check():
 # Serve frontend static files in production
 # The frontend build output will be mounted at /
 # This should be the last route to avoid conflicts
-import os
-
 STATIC_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static")
 if os.path.isdir(STATIC_DIR):
     from fastapi.responses import FileResponse

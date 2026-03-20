@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, Query, WebSocket, WebSocketDisconnect
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth import decode_access_token, require_user
+from app.auth import decode_access_token
 from app.database import async_session, get_db
 from app.models import ChatMessage, User
 from app.schemas import ChatHistoryResponse, ChatMessageResponse
@@ -82,36 +82,45 @@ async def websocket_chat(
     await manager.connect(websocket, stream_name, user)
 
     # Send online count
-    await websocket.send_json({
-        "type": "system",
-        "content": f"Connected to stream: {stream_name}",
-        "online_count": manager.get_online_count(stream_name),
-    })
+    await websocket.send_json(
+        {
+            "type": "system",
+            "content": f"Connected to stream: {stream_name}",
+            "online_count": manager.get_online_count(stream_name),
+        }
+    )
 
     # Broadcast user join
     if user:
-        await manager.broadcast(stream_name, {
-            "type": "system",
-            "content": f"{user.display_name or user.username} joined",
-            "online_count": manager.get_online_count(stream_name),
-        })
+        await manager.broadcast(
+            stream_name,
+            {
+                "type": "system",
+                "content": f"{user.display_name or user.username} joined",
+                "online_count": manager.get_online_count(stream_name),
+            },
+        )
 
     try:
         while True:
             data = await websocket.receive_text()
 
             if not user:
-                await websocket.send_json({
-                    "type": "error",
-                    "content": "Authentication required to send messages",
-                })
+                await websocket.send_json(
+                    {
+                        "type": "error",
+                        "content": "Authentication required to send messages",
+                    }
+                )
                 continue
 
             if user.is_banned:
-                await websocket.send_json({
-                    "type": "error",
-                    "content": "You are banned from chatting",
-                })
+                await websocket.send_json(
+                    {
+                        "type": "error",
+                        "content": "You are banned from chatting",
+                    }
+                )
                 continue
 
             try:
@@ -137,26 +146,32 @@ async def websocket_chat(
                 await db.refresh(chat_msg)
 
                 # Broadcast message
-                await manager.broadcast(stream_name, {
-                    "type": "message",
-                    "id": chat_msg.id,
-                    "user_id": user.id,
-                    "username": user.username,
-                    "display_name": user.display_name,
-                    "avatar_url": user.avatar_url,
-                    "content": content,
-                    "created_at": chat_msg.created_at.isoformat() if chat_msg.created_at else None,
-                    "is_admin": user.is_admin,
-                })
+                await manager.broadcast(
+                    stream_name,
+                    {
+                        "type": "message",
+                        "id": chat_msg.id,
+                        "user_id": user.id,
+                        "username": user.username,
+                        "display_name": user.display_name,
+                        "avatar_url": user.avatar_url,
+                        "content": content,
+                        "created_at": chat_msg.created_at.isoformat() if chat_msg.created_at else None,
+                        "is_admin": user.is_admin,
+                    },
+                )
 
     except WebSocketDisconnect:
         manager.disconnect(websocket, stream_name)
         if user:
-            await manager.broadcast(stream_name, {
-                "type": "system",
-                "content": f"{user.display_name or user.username} left",
-                "online_count": manager.get_online_count(stream_name),
-            })
+            await manager.broadcast(
+                stream_name,
+                {
+                    "type": "system",
+                    "content": f"{user.display_name or user.username} left",
+                    "online_count": manager.get_online_count(stream_name),
+                },
+            )
 
 
 @router.get("/history/{stream_name}", response_model=ChatHistoryResponse)
