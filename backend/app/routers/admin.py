@@ -26,17 +26,34 @@ router = APIRouter(prefix="/api/admin", tags=["admin"])
 # ============================================================
 
 
+def _oryx_headers() -> dict:
+    """Build auth headers for Oryx API requests."""
+    headers = {}
+    if settings.oryx_api_secret:
+        headers["Authorization"] = f"Bearer {settings.oryx_api_secret}"
+    return headers
+
+
 async def _oryx_request(method: str, path: str, **kwargs) -> dict:
-    """Make a request to the Oryx/SRS API."""
+    """Make a request to the Oryx API.
+
+    Oryx uses /terraform/v1/ prefix for its management API,
+    and /api/v1/ (proxied from SRS) for stream/client queries.
+    Auth is via Bearer token in Authorization header.
+    """
     url = f"{settings.oryx_api_url}{path}"
+    headers = kwargs.pop("headers", {})
+    headers.update(_oryx_headers())
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:
-            response = await client.request(method, url, **kwargs)
+            response = await client.request(method, url, headers=headers, **kwargs)
             response.raise_for_status()
             return response.json()
     except httpx.HTTPStatusError as e:
+        logger.error(f"Oryx API HTTP error: {e.response.status_code} {e.response.text}")
         raise HTTPException(status_code=e.response.status_code, detail=str(e))
     except Exception as e:
+        logger.error(f"Oryx API connection error: {e}")
         raise HTTPException(status_code=502, detail=f"Oryx API error: {str(e)}")
 
 
@@ -115,7 +132,7 @@ async def delete_chat_message(
 
 @router.get("/oryx/system")
 async def get_oryx_system_info(admin: User = Depends(require_admin)):
-    """Get Oryx system information."""
+    """Get Oryx system information (SRS summaries)."""
     return await _oryx_request("GET", "/api/v1/summaries")
 
 
@@ -125,6 +142,18 @@ async def get_oryx_versions(admin: User = Depends(require_admin)):
     return await _oryx_request("GET", "/api/v1/versions")
 
 
+@router.get("/oryx/status")
+async def get_oryx_status(admin: User = Depends(require_admin)):
+    """Get Oryx platform status."""
+    return await _oryx_request("POST", "/terraform/v1/mgmt/status")
+
+
+@router.get("/oryx/check")
+async def get_oryx_check(admin: User = Depends(require_admin)):
+    """Check if Oryx system is healthy."""
+    return await _oryx_request("POST", "/terraform/v1/mgmt/check")
+
+
 # ============================================================
 # Oryx Streams Management
 # ============================================================
@@ -132,24 +161,119 @@ async def get_oryx_versions(admin: User = Depends(require_admin)):
 
 @router.get("/oryx/streams")
 async def get_oryx_streams(admin: User = Depends(require_admin)):
-    """Get all streams from Oryx."""
+    """Get all streams from Oryx (via SRS API)."""
     return await _oryx_request("GET", "/api/v1/streams/")
+
+
+@router.post("/oryx/streams/query")
+async def query_oryx_streams(admin: User = Depends(require_admin)):
+    """Query active streams via Oryx management API."""
+    return await _oryx_request("POST", "/terraform/v1/mgmt/streams/query")
+
+
+@router.post("/oryx/streams/kickoff")
+async def kickoff_oryx_stream(
+    body: dict,
+    admin: User = Depends(require_admin),
+):
+    """Kick off a stream by name via Oryx management API."""
+    return await _oryx_request("POST", "/terraform/v1/mgmt/streams/kickoff", json=body)
 
 
 @router.get("/oryx/clients")
 async def get_oryx_clients(admin: User = Depends(require_admin)):
-    """Get all connected clients."""
+    """Get all connected clients (via SRS API)."""
     return await _oryx_request("GET", "/api/v1/clients/")
 
 
 @router.delete("/oryx/clients/{client_id}")
 async def kick_oryx_client(client_id: str, admin: User = Depends(require_admin)):
-    """Kick a client from Oryx."""
+    """Kick a client from Oryx (via SRS API)."""
     return await _oryx_request("DELETE", f"/api/v1/clients/{client_id}")
 
 
 # ============================================================
-# Oryx VHost Configuration
+# Oryx Publish Secret (Stream Auth)
+# ============================================================
+
+
+@router.get("/oryx/secret")
+async def get_oryx_secret(admin: User = Depends(require_admin)):
+    """Get publish secret for stream authentication."""
+    return await _oryx_request("POST", "/terraform/v1/hooks/srs/secret/query")
+
+
+@router.post("/oryx/secret")
+async def update_oryx_secret(config: dict, admin: User = Depends(require_admin)):
+    """Update publish secret for stream authentication."""
+    return await _oryx_request("POST", "/terraform/v1/hooks/srs/secret/update", json=config)
+
+
+# ============================================================
+# Oryx Virtual Live
+# ============================================================
+
+
+@router.get("/oryx/vlive")
+async def get_oryx_vlive(admin: User = Depends(require_admin)):
+    """Get virtual live streaming list."""
+    return await _oryx_request("POST", "/terraform/v1/ffmpeg/vlive/streams")
+
+
+@router.post("/oryx/vlive")
+async def update_oryx_vlive(config: dict, admin: User = Depends(require_admin)):
+    """Update virtual live streaming configuration."""
+    return await _oryx_request("POST", "/terraform/v1/ffmpeg/vlive/secret", json=config)
+
+
+# ============================================================
+# Oryx Camera (IP Camera)
+# ============================================================
+
+
+@router.get("/oryx/camera")
+async def get_oryx_camera(admin: User = Depends(require_admin)):
+    """Get IP camera streaming list."""
+    return await _oryx_request("POST", "/terraform/v1/ffmpeg/camera/streams")
+
+
+@router.post("/oryx/camera")
+async def update_oryx_camera(config: dict, admin: User = Depends(require_admin)):
+    """Update IP camera configuration."""
+    return await _oryx_request("POST", "/terraform/v1/ffmpeg/camera/secret", json=config)
+
+
+# ============================================================
+# Oryx Live Room
+# ============================================================
+
+
+@router.get("/oryx/rooms")
+async def list_oryx_rooms(admin: User = Depends(require_admin)):
+    """List all live rooms."""
+    return await _oryx_request("POST", "/terraform/v1/live/room/list")
+
+
+@router.post("/oryx/rooms/create")
+async def create_oryx_room(config: dict, admin: User = Depends(require_admin)):
+    """Create a new live room."""
+    return await _oryx_request("POST", "/terraform/v1/live/room/create", json=config)
+
+
+@router.post("/oryx/rooms/update")
+async def update_oryx_room(config: dict, admin: User = Depends(require_admin)):
+    """Update a live room."""
+    return await _oryx_request("POST", "/terraform/v1/live/room/update", json=config)
+
+
+@router.post("/oryx/rooms/remove")
+async def remove_oryx_room(config: dict, admin: User = Depends(require_admin)):
+    """Remove a live room."""
+    return await _oryx_request("POST", "/terraform/v1/live/room/remove", json=config)
+
+
+# ============================================================
+# Oryx SRS Vhosts (via SRS API)
 # ============================================================
 
 
@@ -166,20 +290,26 @@ async def get_oryx_vhost(vhost_id: str, admin: User = Depends(require_admin)):
 
 
 # ============================================================
-# Oryx DVR (Recording)
+# Oryx DVR (Recording) - uses /terraform/v1/hooks/record/
 # ============================================================
 
 
 @router.get("/oryx/dvr")
 async def get_oryx_dvr(admin: User = Depends(require_admin)):
-    """Get DVR configuration."""
-    return await _oryx_request("GET", "/api/v1/dvrs/")
+    """Get record/DVR configuration."""
+    return await _oryx_request("POST", "/terraform/v1/hooks/record/query")
 
 
 @router.post("/oryx/dvr")
 async def update_oryx_dvr(config: dict, admin: User = Depends(require_admin)):
-    """Update DVR configuration."""
-    return await _oryx_request("POST", "/api/v1/dvrs/", json=config)
+    """Update record/DVR configuration."""
+    return await _oryx_request("POST", "/terraform/v1/hooks/record/apply", json=config)
+
+
+@router.get("/oryx/dvr/files")
+async def list_oryx_dvr_files(admin: User = Depends(require_admin)):
+    """List recorded files."""
+    return await _oryx_request("POST", "/terraform/v1/hooks/record/files")
 
 
 # ============================================================
@@ -189,14 +319,26 @@ async def update_oryx_dvr(config: dict, admin: User = Depends(require_admin)):
 
 @router.get("/oryx/hls")
 async def get_oryx_hls(admin: User = Depends(require_admin)):
-    """Get HLS configuration."""
-    return await _oryx_request("GET", "/api/v1/hls/")
+    """Get HLS delivery configuration."""
+    return await _oryx_request("POST", "/terraform/v1/mgmt/hphls/query")
 
 
 @router.post("/oryx/hls")
 async def update_oryx_hls(config: dict, admin: User = Depends(require_admin)):
-    """Update HLS configuration."""
-    return await _oryx_request("POST", "/api/v1/hls/", json=config)
+    """Update HLS delivery configuration (high performance mode)."""
+    return await _oryx_request("POST", "/terraform/v1/mgmt/hphls/update", json=config)
+
+
+@router.get("/oryx/hls/ll")
+async def get_oryx_hls_ll(admin: User = Depends(require_admin)):
+    """Get HLS low latency configuration."""
+    return await _oryx_request("POST", "/terraform/v1/mgmt/hlsll/query")
+
+
+@router.post("/oryx/hls/ll")
+async def update_oryx_hls_ll(config: dict, admin: User = Depends(require_admin)):
+    """Update HLS low latency configuration."""
+    return await _oryx_request("POST", "/terraform/v1/mgmt/hlsll/update", json=config)
 
 
 # ============================================================
@@ -206,20 +348,14 @@ async def update_oryx_hls(config: dict, admin: User = Depends(require_admin)):
 
 @router.get("/oryx/forward")
 async def get_oryx_forwards(admin: User = Depends(require_admin)):
-    """Get forward/relay configurations."""
-    return await _oryx_request("GET", "/api/v1/forwards/")
+    """Get forward/relay stream list."""
+    return await _oryx_request("POST", "/terraform/v1/ffmpeg/forward/streams")
 
 
 @router.post("/oryx/forward")
 async def create_oryx_forward(config: dict, admin: User = Depends(require_admin)):
-    """Create a forward/relay configuration."""
-    return await _oryx_request("POST", "/api/v1/forwards/", json=config)
-
-
-@router.delete("/oryx/forward/{forward_id}")
-async def delete_oryx_forward(forward_id: str, admin: User = Depends(require_admin)):
-    """Delete a forward/relay configuration."""
-    return await _oryx_request("DELETE", f"/api/v1/forwards/{forward_id}")
+    """Create/update a forward/relay configuration."""
+    return await _oryx_request("POST", "/terraform/v1/ffmpeg/forward/secret", json=config)
 
 
 # ============================================================
@@ -229,20 +365,20 @@ async def delete_oryx_forward(forward_id: str, admin: User = Depends(require_adm
 
 @router.get("/oryx/transcode")
 async def get_oryx_transcodes(admin: User = Depends(require_admin)):
-    """Get transcode configurations."""
-    return await _oryx_request("GET", "/api/v1/transcodes/")
+    """Get transcode configuration."""
+    return await _oryx_request("POST", "/terraform/v1/ffmpeg/transcode/query")
 
 
 @router.post("/oryx/transcode")
-async def create_oryx_transcode(config: dict, admin: User = Depends(require_admin)):
-    """Create a transcode configuration."""
-    return await _oryx_request("POST", "/api/v1/transcodes/", json=config)
+async def update_oryx_transcode(config: dict, admin: User = Depends(require_admin)):
+    """Apply transcode configuration."""
+    return await _oryx_request("POST", "/terraform/v1/ffmpeg/transcode/apply", json=config)
 
 
-@router.delete("/oryx/transcode/{transcode_id}")
-async def delete_oryx_transcode(transcode_id: str, admin: User = Depends(require_admin)):
-    """Delete a transcode configuration."""
-    return await _oryx_request("DELETE", f"/api/v1/transcodes/{transcode_id}")
+@router.get("/oryx/transcode/task")
+async def get_oryx_transcode_task(admin: User = Depends(require_admin)):
+    """Query transcode task status."""
+    return await _oryx_request("POST", "/terraform/v1/ffmpeg/transcode/task")
 
 
 # ============================================================
@@ -253,30 +389,41 @@ async def delete_oryx_transcode(transcode_id: str, admin: User = Depends(require
 @router.get("/oryx/hooks")
 async def get_oryx_hooks(admin: User = Depends(require_admin)):
     """Get HTTP callback/hook configurations."""
-    return await _oryx_request("GET", "/api/v1/hooks/")
+    return await _oryx_request("POST", "/terraform/v1/mgmt/hooks/query")
 
 
 @router.post("/oryx/hooks")
 async def update_oryx_hooks(config: dict, admin: User = Depends(require_admin)):
     """Update HTTP callback/hook configurations."""
-    return await _oryx_request("POST", "/api/v1/hooks/", json=config)
+    return await _oryx_request("POST", "/terraform/v1/mgmt/hooks/apply", json=config)
 
 
 # ============================================================
-# Oryx Raw Config (for advanced usage)
+# Oryx Limits Configuration
 # ============================================================
 
 
-@router.get("/oryx/raw")
-async def get_oryx_raw_config(admin: User = Depends(require_admin)):
-    """Get raw SRS config."""
-    return await _oryx_request("GET", "/api/v1/raw")
+@router.get("/oryx/limits")
+async def get_oryx_limits(admin: User = Depends(require_admin)):
+    """Get system limits configuration."""
+    return await _oryx_request("POST", "/terraform/v1/mgmt/limits/query")
 
 
-@router.post("/oryx/raw")
-async def update_oryx_raw_config(config: dict, admin: User = Depends(require_admin)):
-    """Update raw SRS config. Use with caution."""
-    return await _oryx_request("POST", "/api/v1/raw", json=config)
+@router.post("/oryx/limits")
+async def update_oryx_limits(config: dict, admin: User = Depends(require_admin)):
+    """Update system limits configuration."""
+    return await _oryx_request("POST", "/terraform/v1/mgmt/limits/update", json=config)
+
+
+# ============================================================
+# Oryx SSL / HTTPS
+# ============================================================
+
+
+@router.get("/oryx/cert")
+async def get_oryx_cert(admin: User = Depends(require_admin)):
+    """Query SSL certificate status."""
+    return await _oryx_request("POST", "/terraform/v1/mgmt/cert/query")
 
 
 # ============================================================

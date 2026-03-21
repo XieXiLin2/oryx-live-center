@@ -76,39 +76,88 @@ export const adminApi = {
     api.put(`/admin/users/${userId}/ban`, { is_banned }),
   deleteMessage: (messageId: number) => api.delete(`/admin/chat/messages/${messageId}`),
 
-  // Oryx
+  // Oryx — System Info
   getSystemInfo: () => api.get('/admin/oryx/system').then((r) => r.data),
   getVersions: () => api.get('/admin/oryx/versions').then((r) => r.data),
+  getStatus: () => api.get('/admin/oryx/status').then((r) => r.data),
+  getCheck: () => api.get('/admin/oryx/check').then((r) => r.data),
+
+  // Oryx — Streams
   getStreams: () => api.get('/admin/oryx/streams').then((r) => r.data),
+  queryStreams: () => api.post('/admin/oryx/streams/query').then((r) => r.data),
+  kickoffStream: (body: Record<string, unknown>) =>
+    api.post('/admin/oryx/streams/kickoff', body).then((r) => r.data),
+
+  // Oryx — Clients
   getClients: () => api.get('/admin/oryx/clients').then((r) => r.data),
   kickClient: (clientId: string) => api.delete(`/admin/oryx/clients/${clientId}`),
 
-  // Vhosts
+  // Oryx — Publish Secret
+  getSecret: () => api.get('/admin/oryx/secret').then((r) => r.data),
+  updateSecret: (config: Record<string, unknown>) =>
+    api.post('/admin/oryx/secret', config).then((r) => r.data),
+
+  // Oryx — Virtual Live
+  getVlive: () => api.get('/admin/oryx/vlive').then((r) => r.data),
+  updateVlive: (config: Record<string, unknown>) =>
+    api.post('/admin/oryx/vlive', config).then((r) => r.data),
+
+  // Oryx — Camera (IP Camera)
+  getCamera: () => api.get('/admin/oryx/camera').then((r) => r.data),
+  updateCamera: (config: Record<string, unknown>) =>
+    api.post('/admin/oryx/camera', config).then((r) => r.data),
+
+  // Oryx — Live Rooms
+  getRooms: () => api.get('/admin/oryx/rooms').then((r) => r.data),
+  createRoom: (config: Record<string, unknown>) =>
+    api.post('/admin/oryx/rooms/create', config).then((r) => r.data),
+  updateRoom: (config: Record<string, unknown>) =>
+    api.post('/admin/oryx/rooms/update', config).then((r) => r.data),
+  removeRoom: (config: Record<string, unknown>) =>
+    api.post('/admin/oryx/rooms/remove', config).then((r) => r.data),
+
+  // Oryx — Vhosts
   getVhosts: () => api.get('/admin/oryx/vhosts').then((r) => r.data),
 
-  // DVR
+  // Oryx — DVR (Recording)
   getDvr: () => api.get('/admin/oryx/dvr').then((r) => r.data),
-  updateDvr: (config: Record<string, unknown>) => api.post('/admin/oryx/dvr', config),
+  updateDvr: (config: Record<string, unknown>) =>
+    api.post('/admin/oryx/dvr', config).then((r) => r.data),
+  getDvrFiles: () => api.get('/admin/oryx/dvr/files').then((r) => r.data),
 
-  // HLS
+  // Oryx — HLS
   getHls: () => api.get('/admin/oryx/hls').then((r) => r.data),
-  updateHls: (config: Record<string, unknown>) => api.post('/admin/oryx/hls', config),
+  updateHls: (config: Record<string, unknown>) =>
+    api.post('/admin/oryx/hls', config).then((r) => r.data),
+  getHlsLl: () => api.get('/admin/oryx/hls/ll').then((r) => r.data),
+  updateHlsLl: (config: Record<string, unknown>) =>
+    api.post('/admin/oryx/hls/ll', config).then((r) => r.data),
 
-  // Forward
+  // Oryx — Forward (Relay/Restream)
   getForwards: () => api.get('/admin/oryx/forward').then((r) => r.data),
-  createForward: (config: Record<string, unknown>) => api.post('/admin/oryx/forward', config),
-  deleteForward: (id: string) => api.delete(`/admin/oryx/forward/${id}`),
+  createForward: (config: Record<string, unknown>) =>
+    api.post('/admin/oryx/forward', config).then((r) => r.data),
 
-  // Transcode
+  // Oryx — Transcode
   getTranscodes: () => api.get('/admin/oryx/transcode').then((r) => r.data),
-  createTranscode: (config: Record<string, unknown>) => api.post('/admin/oryx/transcode', config),
-  deleteTranscode: (id: string) => api.delete(`/admin/oryx/transcode/${id}`),
+  createTranscode: (config: Record<string, unknown>) =>
+    api.post('/admin/oryx/transcode', config).then((r) => r.data),
+  getTranscodeTask: () => api.get('/admin/oryx/transcode/task').then((r) => r.data),
 
-  // Hooks
+  // Oryx — HTTP Hooks / Callbacks
   getHooks: () => api.get('/admin/oryx/hooks').then((r) => r.data),
-  updateHooks: (config: Record<string, unknown>) => api.post('/admin/oryx/hooks', config),
+  updateHooks: (config: Record<string, unknown>) =>
+    api.post('/admin/oryx/hooks', config).then((r) => r.data),
 
-  // Settings
+  // Oryx — Limits
+  getLimits: () => api.get('/admin/oryx/limits').then((r) => r.data),
+  updateLimits: (config: Record<string, unknown>) =>
+    api.post('/admin/oryx/limits', config).then((r) => r.data),
+
+  // Oryx — SSL/Cert
+  getCert: () => api.get('/admin/oryx/cert').then((r) => r.data),
+
+  // App Settings
   getSettings: () => api.get('/admin/settings').then((r) => r.data),
   getCdnConfig: () => api.get('/admin/cdn/config').then((r) => r.data),
 };

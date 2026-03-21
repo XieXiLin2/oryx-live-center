@@ -10,11 +10,16 @@ import Dashboard from './pages/admin/Dashboard';
 import OryxClients from './pages/admin/OryxClients';
 import {
   AdminSettings,
+  OryxCamera,
+  OryxCert,
   OryxDvr,
   OryxForward,
   OryxHls,
   OryxHooks,
+  OryxLimits,
+  OryxSecret,
   OryxTranscode,
+  OryxVlive,
 } from './pages/admin/OryxPages';
 import StreamsManage from './pages/admin/StreamsManage';
 import UsersManage from './pages/admin/UsersManage';
@@ -41,11 +46,16 @@ const AppContent: React.FC = () => {
           <Route path="streams" element={<StreamsManage />} />
           <Route path="users" element={<UsersManage />} />
           <Route path="oryx/clients" element={<OryxClients />} />
+          <Route path="oryx/secret" element={<OryxSecret />} />
           <Route path="oryx/dvr" element={<OryxDvr />} />
           <Route path="oryx/hls" element={<OryxHls />} />
           <Route path="oryx/forward" element={<OryxForward />} />
           <Route path="oryx/transcode" element={<OryxTranscode />} />
+          <Route path="oryx/vlive" element={<OryxVlive />} />
+          <Route path="oryx/camera" element={<OryxCamera />} />
           <Route path="oryx/hooks" element={<OryxHooks />} />
+          <Route path="oryx/limits" element={<OryxLimits />} />
+          <Route path="oryx/cert" element={<OryxCert />} />
           <Route path="settings" element={<AdminSettings />} />
         </Route>
       </Route>

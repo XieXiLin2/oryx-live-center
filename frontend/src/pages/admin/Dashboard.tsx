@@ -15,7 +15,8 @@ const Dashboard: React.FC = () => {
     Promise.all([
       adminApi.getSystemInfo().catch(() => null),
       adminApi.getVersions().catch(() => null),
-    ]).then(([sys, ver]) => {
+      adminApi.getStatus().catch(() => null),
+    ]).then(([sys, ver, status]) => {
       if (cancelled) return;
       setSystemInfo(sys);
       setVersions(ver);

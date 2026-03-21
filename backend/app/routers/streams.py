@@ -28,8 +28,14 @@ router = APIRouter(prefix="/api/streams", tags=["streams"])
 async def _get_oryx_streams() -> list[dict]:
     """Fetch live streams from Oryx/SRS API."""
     try:
+        headers = {}
+        if settings.oryx_api_secret:
+            headers["Authorization"] = f"Bearer {settings.oryx_api_secret}"
         async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.get(f"{settings.oryx_api_url}/api/v1/streams/")
+            response = await client.get(
+                f"{settings.oryx_api_url}/api/v1/streams/",
+                headers=headers,
+            )
             response.raise_for_status()
             data = response.json()
             return data.get("streams", [])
@@ -48,8 +54,18 @@ def _get_stream_formats(stream: dict) -> list[str]:
 
 
 def _build_stream_url(stream_name: str, app: str, fmt: str) -> str:
-    """Build a stream play URL based on format."""
-    base = settings.cdn_base_url or settings.oryx_http_url
+    """Build a stream play URL based on format.
+
+    When CDN is configured, use CDN base URL.
+    Otherwise, use relative paths that are reverse-proxied through our backend
+    to the Oryx HTTP server. This way the frontend never needs to know Oryx's address.
+    """
+    if settings.cdn_base_url:
+        base = settings.cdn_base_url
+    else:
+        # Use relative path — our main.py reverse proxy handles /live/ and /rtc/
+        base = ""
+
     if fmt == "flv":
         return f"{base}/{app}/{stream_name}.flv"
     elif fmt == "hls":
@@ -57,7 +73,8 @@ def _build_stream_url(stream_name: str, app: str, fmt: str) -> str:
     elif fmt == "webrtc":
         return f"{base}/rtc/v1/whep/?app={app}&stream={stream_name}"
     elif fmt == "rtmp":
-        return f"rtmp://{base.replace('http://', '').replace('https://', '')}/{app}/{stream_name}"
+        # RTMP must go directly to the RTMP port (1935), cannot be proxied over HTTP
+        return f"rtmp://localhost/{app}/{stream_name}"
     else:
         return f"{base}/{app}/{stream_name}.flv"
 

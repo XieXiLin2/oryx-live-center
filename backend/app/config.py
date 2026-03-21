@@ -29,10 +29,10 @@ class Settings(BaseSettings):
     oauth2_scope: str = "openid profile email"
     oauth2_admin_group: str = "oryx-admin"
 
-    # Oryx
-    oryx_api_url: str = "http://localhost:1985"
+    # Oryx (all-in-one, port 2022 is the main entry)
+    oryx_api_url: str = "http://localhost:2022"
     oryx_api_secret: str = ""
-    oryx_http_url: str = "http://localhost:8080"
+    oryx_http_url: str = "http://localhost:2022"
 
     # CDN
     cdn_base_url: str = ""

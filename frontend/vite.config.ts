@@ -14,6 +14,16 @@ export default defineConfig({
         target: 'ws://localhost:8000',
         ws: true,
       },
+      // Oryx media streams (FLV, HLS, TS) reverse proxy in dev
+      '/live': {
+        target: 'http://localhost:2022',
+        changeOrigin: true,
+      },
+      // Oryx WebRTC signaling (WHIP/WHEP) proxy in dev
+      '/rtc': {
+        target: 'http://localhost:2022',
+        changeOrigin: true,
+      },
     },
   },
   build: {

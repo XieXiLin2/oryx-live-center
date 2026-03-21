@@ -1,8 +1,12 @@
 import {
   ApiOutlined,
+  CameraOutlined,
   CloudServerOutlined,
   ForwardOutlined,
+  KeyOutlined,
+  LockOutlined,
   PlayCircleOutlined,
+  SafetyCertificateOutlined,
   SettingOutlined,
   VideoCameraOutlined,
 } from '@ant-design/icons';
@@ -52,6 +56,50 @@ export const OryxHooks: React.FC = () => (
     icon={<ApiOutlined />}
     fetchFn={adminApi.getHooks}
     saveFn={adminApi.updateHooks as (config: Record<string, unknown>) => Promise<unknown>}
+  />
+);
+
+export const OryxSecret: React.FC = () => (
+  <OryxConfigPage
+    title="推流密钥"
+    icon={<KeyOutlined />}
+    fetchFn={adminApi.getSecret}
+    saveFn={adminApi.updateSecret as (config: Record<string, unknown>) => Promise<unknown>}
+  />
+);
+
+export const OryxVlive: React.FC = () => (
+  <OryxConfigPage
+    title="虚拟直播"
+    icon={<PlayCircleOutlined />}
+    fetchFn={adminApi.getVlive}
+    saveFn={adminApi.updateVlive as (config: Record<string, unknown>) => Promise<unknown>}
+  />
+);
+
+export const OryxCamera: React.FC = () => (
+  <OryxConfigPage
+    title="IP 摄像头"
+    icon={<CameraOutlined />}
+    fetchFn={adminApi.getCamera}
+    saveFn={adminApi.updateCamera as (config: Record<string, unknown>) => Promise<unknown>}
+  />
+);
+
+export const OryxLimits: React.FC = () => (
+  <OryxConfigPage
+    title="系统限制"
+    icon={<LockOutlined />}
+    fetchFn={adminApi.getLimits}
+    saveFn={adminApi.updateLimits as (config: Record<string, unknown>) => Promise<unknown>}
+  />
+);
+
+export const OryxCert: React.FC = () => (
+  <OryxConfigPage
+    title="SSL 证书"
+    icon={<SafetyCertificateOutlined />}
+    fetchFn={adminApi.getCert}
   />
 );
 
