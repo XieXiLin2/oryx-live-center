@@ -8,6 +8,7 @@ import type {
   StreamPlayResponse,
   StreamPlaySessionItem,
   StreamPublishSessionItem,
+  StreamStats,
   TokenResponse,
   User,
   UserListResponse,
@@ -56,6 +57,8 @@ export const streamApi = {
       .then((r) => r.data),
   getChatConfig: (stream_name: string) =>
     api.get<ChatRoomConfig>(`/streams/${stream_name}/chat-config`).then((r) => r.data),
+  getStats: (stream_name: string) =>
+    api.get<StreamStats>(`/streams/${stream_name}/stats`).then((r) => r.data),
 
   // --- Admin ---
   listConfigs: () => api.get<StreamConfig[]>('/streams/config').then((r) => r.data),

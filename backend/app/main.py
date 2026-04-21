@@ -14,9 +14,12 @@ from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
 from starlette.responses import StreamingResponse
 
+import asyncio
+
 from app.config import settings
 from app.database import init_db
 from app.routers import admin, auth, chat, hooks, streams
+from app.stats_reconciler import reconciler_loop
 
 logging.basicConfig(
     level=logging.DEBUG if settings.debug else logging.INFO,
@@ -33,8 +36,21 @@ async def lifespan(app: FastAPI):
     logger.info("Database initialized")
     logger.info("SRS HTTP:     %s", settings.srs_http_url)
     logger.info("SRS HTTP API: %s", settings.srs_api_url)
-    yield
-    logger.info(f"Shutting down {settings.app_name}")
+
+    # Background reconciler: heals the stats tables when SRS hooks are missed
+    # (publisher crashes, viewer tabs killed, etc).
+    reconciler_task = asyncio.create_task(reconciler_loop())
+    logger.info("Stats reconciler started")
+
+    try:
+        yield
+    finally:
+        reconciler_task.cancel()
+        try:
+            await reconciler_task
+        except (asyncio.CancelledError, Exception):  # noqa: BLE001
+            pass
+        logger.info(f"Shutting down {settings.app_name}")
 
 
 app = FastAPI(

@@ -11,11 +11,15 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from fastapi import status as _status  # noqa: F401
+
+from sqlalchemy import func
+
 from app import srs_client
 from app.auth import get_current_user, require_admin
 from app.config import settings
 from app.database import get_db
-from app.models import StreamConfig, User
+from app.models import StreamConfig, StreamPlaySession, StreamPublishSession, User
 from app.schemas import (
     ChatRoomConfig,
     StreamConfigRequest,
@@ -64,9 +68,21 @@ async def list_streams(
     result = await db.execute(select(StreamConfig).order_by(StreamConfig.created_at))
     configs = list(result.scalars().all())
 
-    # 2. Currently active SRS streams (to annotate live state / codec / viewers).
+    # 2. Currently active SRS streams — ONLY used for liveness + codec info.
+    #    Viewer counts / total play counts / durations are owned by the backend
+    #    (via hooks + reconciler) so they stay accurate across SRS restarts and
+    #    dropped hook callbacks.
     live_rows = await srs_client.list_streams()
     live_map = {row.get("name", ""): row for row in live_rows if row.get("name")}
+
+    # 3. Backend-owned viewer counts: count currently-open play sessions per
+    #    stream. This is the source of truth that the UI shows.
+    viewer_q = await db.execute(
+        select(StreamPlaySession.stream_name, func.count(StreamPlaySession.id))
+        .where(StreamPlaySession.ended_at.is_(None))
+        .group_by(StreamPlaySession.stream_name)
+    )
+    open_viewer_map: dict[str, int] = {name: cnt for name, cnt in viewer_q.all()}
 
     out: list[StreamInfo] = []
     for cfg in configs:
@@ -82,6 +98,14 @@ async def list_streams(
         if not settings.webrtc_play_enabled or not room_webrtc_ok:
             formats = [f for f in formats if f != "webrtc"]
 
+        # SRS-authoritative liveness; fall back to DB only when SRS is unreachable.
+        is_live = bool(live) if live_rows is not None else cfg.is_live
+
+        # Our own viewer count (does NOT come from SRS).
+        # If the stream went offline, force viewer_count to 0 to avoid ghost
+        # counts lingering until the reconciler runs.
+        viewer_count = open_viewer_map.get(cfg.stream_name, 0) if is_live else 0
+
         out.append(
             StreamInfo(
                 name=cfg.stream_name,
@@ -89,16 +113,105 @@ async def list_streams(
                 app=(live or {}).get("app", settings.srs_app),
                 video_codec=video.get("codec") if video else None,
                 audio_codec=audio.get("codec") if audio else None,
-                clients=(live or {}).get("clients", cfg.viewer_count),
+                clients=viewer_count,
                 is_private=cfg.is_private,
                 chat_enabled=cfg.chat_enabled,
                 webrtc_play_enabled=settings.webrtc_play_enabled and room_webrtc_ok,
-                is_live=bool(live) or cfg.is_live,
+                is_live=is_live,
                 formats=formats,
             )
         )
 
     return StreamListResponse(streams=out)
+
+
+# ---------------------------------------------------------------------------
+# Per-stream aggregated statistics (DB-owned)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/{stream_name}/stats")
+async def get_stream_stats(
+    stream_name: str,
+    db: AsyncSession = Depends(get_db),
+    _user: Optional[User] = Depends(get_current_user),
+) -> dict:
+    """Aggregate statistics for one stream, all computed by the backend.
+
+    We intentionally **do not** surface SRS's internal `clients` counter here.
+    SRS is still consulted for the boolean "is there an active publisher",
+    because that is something only the media server can know authoritatively.
+    """
+    result = await db.execute(select(StreamConfig).where(StreamConfig.stream_name == stream_name))
+    cfg = result.scalar_one_or_none()
+    if cfg is None:
+        raise HTTPException(status_code=404, detail="Stream not configured")
+
+    # Current viewers = open play sessions for this stream.
+    current_q = await db.execute(
+        select(func.count(StreamPlaySession.id))
+        .where(StreamPlaySession.stream_name == stream_name)
+        .where(StreamPlaySession.ended_at.is_(None))
+    )
+    current_viewers: int = current_q.scalar() or 0
+
+    # Lifetime totals.
+    total_plays_q = await db.execute(
+        select(func.count(StreamPlaySession.id))
+        .where(StreamPlaySession.stream_name == stream_name)
+    )
+    total_plays: int = total_plays_q.scalar() or 0
+
+    total_watch_q = await db.execute(
+        select(func.coalesce(func.sum(StreamPlaySession.duration_seconds), 0))
+        .where(StreamPlaySession.stream_name == stream_name)
+    )
+    total_watch_seconds: int = int(total_watch_q.scalar() or 0)
+
+    unique_viewers_q = await db.execute(
+        select(func.count(func.distinct(StreamPlaySession.user_id)))
+        .where(StreamPlaySession.stream_name == stream_name)
+        .where(StreamPlaySession.user_id.is_not(None))
+    )
+    unique_logged_in_viewers: int = int(unique_viewers_q.scalar() or 0)
+
+    # Active publish session (if any), used to report "live since ...".
+    pub_q = await db.execute(
+        select(StreamPublishSession)
+        .where(StreamPublishSession.stream_name == stream_name)
+        .where(StreamPublishSession.ended_at.is_(None))
+        .order_by(StreamPublishSession.started_at.desc())
+    )
+    active_pub = pub_q.scalars().first()
+
+    # Peak concurrent viewers in the current live session:
+    # count of play sessions whose started_at >= current publisher's started_at.
+    peak_concurrent: int = 0
+    if active_pub is not None:
+        peak_q = await db.execute(
+            select(func.count(StreamPlaySession.id))
+            .where(StreamPlaySession.stream_name == stream_name)
+            .where(StreamPlaySession.started_at >= active_pub.started_at)
+        )
+        peak_concurrent = int(peak_q.scalar() or 0)
+
+    # Consult SRS only for the "is actually publishing right now" bit.
+    live_rows = await srs_client.list_streams()
+    is_live = any(r.get("name") == stream_name for r in live_rows)
+
+    return {
+        "stream_name": stream_name,
+        "display_name": cfg.display_name or stream_name,
+        "is_live": is_live,
+        "current_viewers": current_viewers,
+        "total_plays": total_plays,
+        "total_watch_seconds": total_watch_seconds,
+        "unique_logged_in_viewers": unique_logged_in_viewers,
+        "peak_session_viewers": peak_concurrent,
+        "last_publish_at": cfg.last_publish_at.isoformat() if cfg.last_publish_at else None,
+        "last_unpublish_at": cfg.last_unpublish_at.isoformat() if cfg.last_unpublish_at else None,
+        "current_session_started_at": active_pub.started_at.isoformat() if active_pub else None,
+    }
 
 
 # ---------------------------------------------------------------------------

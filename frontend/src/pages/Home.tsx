@@ -28,7 +28,17 @@ import { streamApi } from '../api';
 import ChatPanel from '../components/ChatPanel';
 import LivePlayer from '../components/LivePlayer';
 import { useAuth } from '../store/auth';
-import type { StreamInfo, StreamPlayResponse } from '../types';
+import type { StreamInfo, StreamPlayResponse, StreamStats } from '../types';
+
+function formatDuration(totalSeconds: number): string {
+  if (!totalSeconds || totalSeconds < 0) return '0s';
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = totalSeconds % 60;
+  if (h > 0) return `${h}h ${m}m`;
+  if (m > 0) return `${m}m ${s}s`;
+  return `${s}s`;
+}
 
 const { Title, Text } = Typography;
 
@@ -42,6 +52,7 @@ const Home: React.FC = () => {
   const [playData, setPlayData] = useState<StreamPlayResponse | null>(null);
   const [tokenModalOpen, setTokenModalOpen] = useState(false);
   const [watchToken, setWatchToken] = useState('');
+  const [stats, setStats] = useState<StreamStats | null>(null);
 
   // Optional deep link: /?room=<stream_name>&token=<watch_token>
   const initialRoom = searchParams.get('room') || '';
@@ -66,6 +77,29 @@ const Home: React.FC = () => {
     const interval = setInterval(fetchStreams, 15000);
     return () => clearInterval(interval);
   }, [fetchStreams]);
+
+  // Poll per-stream statistics (backend-owned, not SRS) while a stream is active.
+  useEffect(() => {
+    if (!selectedStream) {
+      setStats(null);
+      return;
+    }
+    let cancelled = false;
+    const tick = async () => {
+      try {
+        const s = await streamApi.getStats(selectedStream.name);
+        if (!cancelled) setStats(s);
+      } catch {
+        // silently ignore — UI will just not update
+      }
+    };
+    tick();
+    const id = setInterval(tick, 10000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [selectedStream]);
 
   const handlePlay = useCallback(
     async (stream: StreamInfo, format: string, token?: string) => {
@@ -216,10 +250,20 @@ const Home: React.FC = () => {
             >
               <LivePlayer url={playData.url} format={selectedFormat} />
               <div style={{ padding: '8px 16px' }}>
-                <Space>
+                <Space wrap>
                   <Text type="secondary">
-                    <EyeOutlined /> {selectedStream.clients} 观众
+                    <EyeOutlined /> {stats?.current_viewers ?? selectedStream.clients} 观众
                   </Text>
+                  {stats && (
+                    <>
+                      <Text type="secondary">
+                        峰值 {stats.peak_session_viewers}
+                      </Text>
+                      <Text type="secondary">
+                        累计 {stats.total_plays} 次观看 · 总时长 {formatDuration(stats.total_watch_seconds)}
+                      </Text>
+                    </>
+                  )}
                   {selectedStream.video_codec && <Tag>{selectedStream.video_codec}</Tag>}
                   {selectedStream.audio_codec && <Tag>{selectedStream.audio_codec}</Tag>}
                   <Tag color="blue">{selectedFormat.toUpperCase()}</Tag>

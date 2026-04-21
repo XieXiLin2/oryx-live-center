@@ -155,6 +155,12 @@ SRS 回调 `POST /api/hooks/on_play`：
 如需「只允许 WebRTC 推送、不允许 WebRTC 播放」或按直播间粒度控制 WHEP，请阅读
 [`docs/webrtc.md`](docs/webrtc.md)（全局开关 `WEBRTC_PLAY_ENABLED` + 每直播间开关）。
 
+## 播放统计 / 直播统计
+
+观众数、总观看时长、累计观看、峰值观众等数据由 **后端** 持久化维护，SRS 仅负责
+「是否正在推流」。详细的责任划分、对账机制、API 见
+[`docs/stats-architecture.md`](docs/stats-architecture.md)。
+
 最简用法：
 
 ```bash

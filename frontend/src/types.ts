@@ -115,6 +115,26 @@ export interface StreamPlaySessionItem {
   duration_seconds: number;
 }
 
+export interface StreamStats {
+  stream_name: string;
+  display_name: string;
+  is_live: boolean;
+  /** Current concurrent viewers (open play sessions). Backend-owned. */
+  current_viewers: number;
+  /** Lifetime play count since this room was created. */
+  total_plays: number;
+  /** Lifetime total watch-seconds across all viewers. */
+  total_watch_seconds: number;
+  /** Distinct logged-in viewers who have ever played this stream. */
+  unique_logged_in_viewers: number;
+  /** Peak concurrent viewers observed during the current live session. */
+  peak_session_viewers: number;
+  last_publish_at: string | null;
+  last_unpublish_at: string | null;
+  /** When the currently-active publisher started (null if offline). */
+  current_session_started_at: string | null;
+}
+
 export interface StreamPublishSessionItem {
   id: number;
   srs_client_id: string;
