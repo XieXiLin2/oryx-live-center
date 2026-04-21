@@ -1,165 +1,199 @@
-import { DeleteOutlined, EditOutlined, LockOutlined, PlusOutlined, VideoCameraOutlined } from '@ant-design/icons';
-import { Button, Form, Input, message, Modal, Popconfirm, Space, Switch, Table, Tag, Typography } from 'antd';
-import type { ColumnsType } from 'antd/es/table';
-import React, { useCallback, useEffect, useState } from 'react';
+import { CopyOutlined, DeleteOutlined, EditOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons';
+import {
+  App,
+  Button,
+  Form,
+  Input,
+  Modal,
+  Popconfirm,
+  Space,
+  Switch,
+  Table,
+  Tag,
+  Tooltip,
+  Typography,
+} from 'antd';
+import React, { useEffect, useState } from 'react';
 import { streamApi } from '../../api';
 import type { StreamConfig } from '../../types';
 
-const { Title } = Typography;
+const { Title, Text } = Typography;
+
+const copy = async (v: string) => {
+  try { await navigator.clipboard.writeText(v); } catch { /* ignore */ }
+};
 
 const StreamsManage: React.FC = () => {
-  const [configs, setConfigs] = useState<StreamConfig[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [modalOpen, setModalOpen] = useState(false);
-  const [editingName, setEditingName] = useState<string | null>(null);
+  const { message } = App.useApp();
+  const [rows, setRows] = useState<StreamConfig[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [modal, setModal] = useState<{ open: boolean; row?: StreamConfig | null }>({ open: false });
   const [form] = Form.useForm();
 
-  const fetchConfigs = useCallback(async () => {
+  const load = async () => {
     setLoading(true);
     try {
       const data = await streamApi.listConfigs();
-      setConfigs(data);
-    } catch {
-      message.error('获取配置失败');
+      setRows(data);
     } finally {
       setLoading(false);
     }
-  }, []);
-
-  useEffect(() => {
-    fetchConfigs();
-  }, [fetchConfigs]);
-
-  const handleSave = async () => {
-    try {
-      const values = await form.validateFields();
-      const streamName = editingName || values.stream_name;
-      await streamApi.updateConfig(streamName, {
-        display_name: values.display_name,
-        is_encrypted: values.is_encrypted,
-        encryption_key: values.encryption_key,
-        require_auth: values.require_auth,
-      });
-      message.success('保存成功');
-      setModalOpen(false);
-      form.resetFields();
-      setEditingName(null);
-      fetchConfigs();
-    } catch {
-      message.error('保存失败');
-    }
   };
 
-  const handleDelete = async (streamName: string) => {
-    try {
-      await streamApi.deleteConfig(streamName);
-      message.success('已删除');
-      fetchConfigs();
-    } catch {
-      message.error('删除失败');
-    }
-  };
+  useEffect(() => { load(); }, []);
 
-  const openEdit = (config: StreamConfig) => {
-    setEditingName(config.stream_name);
-    form.setFieldsValue({
-      stream_name: config.stream_name,
-      display_name: config.display_name,
-      is_encrypted: config.is_encrypted,
-      require_auth: config.require_auth,
-      encryption_key: '',
-    });
-    setModalOpen(true);
-  };
-
-  const openCreate = () => {
-    setEditingName(null);
+  const openEdit = (row?: StreamConfig) => {
     form.resetFields();
-    setModalOpen(true);
+    if (row) {
+      form.setFieldsValue(row);
+    } else {
+      form.setFieldsValue({ is_private: false, chat_enabled: true });
+    }
+    setModal({ open: true, row });
   };
 
-  const columns: ColumnsType<StreamConfig> = [
-    { title: '流名称', dataIndex: 'stream_name', key: 'stream_name' },
-    { title: '显示名称', dataIndex: 'display_name', key: 'display_name' },
-    {
-      title: '状态',
-      key: 'status',
-      render: (_, record) => (
-        <Space>
-          {record.is_encrypted && <Tag icon={<LockOutlined />} color="orange">加密</Tag>}
-          {record.require_auth && <Tag color="purple">需登录</Tag>}
-        </Space>
-      ),
-    },
-    {
-      title: '更新时间',
-      dataIndex: 'updated_at',
-      key: 'updated_at',
-      render: (v: string) => new Date(v).toLocaleString(),
-    },
-    {
-      title: '操作',
-      key: 'actions',
-      render: (_, record) => (
-        <Space>
-          <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(record)}>
-            编辑
-          </Button>
-          <Popconfirm title="确定删除此配置？" onConfirm={() => handleDelete(record.stream_name)}>
-            <Button size="small" danger icon={<DeleteOutlined />}>
-              删除
-            </Button>
-          </Popconfirm>
-        </Space>
-      ),
-    },
-  ];
+  const submit = async () => {
+    const v = await form.validateFields();
+    const stream_name = v.stream_name?.trim();
+    if (!stream_name) return;
+    await streamApi.updateConfig(stream_name, {
+      display_name: v.display_name ?? '',
+      is_private: !!v.is_private,
+      chat_enabled: !!v.chat_enabled,
+      publish_secret: v.publish_secret || undefined,
+      watch_token: v.watch_token || undefined,
+    });
+    message.success('保存成功');
+    setModal({ open: false });
+    load();
+  };
+
+  const del = async (name: string) => {
+    await streamApi.deleteConfig(name);
+    message.success('已删除');
+    load();
+  };
+
+  const rotateSecret = async (name: string) => {
+    await streamApi.rotatePublishSecret(name);
+    message.success('推流密钥已轮换');
+    load();
+  };
+
+  const rotateToken = async (name: string) => {
+    await streamApi.rotateWatchToken(name);
+    message.success('观看 Token 已轮换');
+    load();
+  };
 
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
-        <Title level={4} style={{ margin: 0 }}>
-          <VideoCameraOutlined /> 直播管理
-        </Title>
-        <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
-          添加配置
-        </Button>
+        <Title level={3} style={{ margin: 0 }}>直播间管理</Title>
+        <Space>
+          <Button icon={<ReloadOutlined />} onClick={load}>刷新</Button>
+          <Button type="primary" icon={<PlusOutlined />} onClick={() => openEdit()}>新建直播间</Button>
+        </Space>
       </div>
 
       <Table
-        columns={columns}
-        dataSource={configs}
         rowKey="id"
         loading={loading}
+        dataSource={rows}
+        pagination={{ pageSize: 20 }}
+        columns={[
+          { title: '流名', dataIndex: 'stream_name' },
+          { title: '显示名', dataIndex: 'display_name' },
+          {
+            title: '可见性',
+            dataIndex: 'is_private',
+            render: (v: boolean) => v ? <Tag color="purple">私有</Tag> : <Tag color="blue">公开</Tag>,
+          },
+          {
+            title: '状态',
+            dataIndex: 'is_live',
+            render: (v: boolean) => v ? <Tag color="green">直播中</Tag> : <Tag>离线</Tag>,
+          },
+          { title: '当前观众', dataIndex: 'viewer_count' },
+          { title: '累计观看', dataIndex: 'total_play_count' },
+          {
+            title: '聊天',
+            dataIndex: 'chat_enabled',
+            render: (v: boolean) => v ? <Tag color="green">开</Tag> : <Tag color="red">关</Tag>,
+          },
+          {
+            title: '密钥',
+            render: (_, r) => (
+              <Space direction="vertical" size={2}>
+                <Text copyable={{ text: r.publish_secret }} style={{ fontSize: 12 }}>
+                  推流: <code>{r.publish_secret?.slice(0, 8)}…</code>
+                </Text>
+                <Text copyable={{ text: r.watch_token }} style={{ fontSize: 12 }}>
+                  Token: <code>{r.watch_token?.slice(0, 8)}…</code>
+                </Text>
+              </Space>
+            ),
+          },
+          {
+            title: '操作',
+            render: (_, r) => (
+              <Space>
+                <Tooltip title="复制 RTMP 推流地址">
+                  <Button
+                    size="small"
+                    icon={<CopyOutlined />}
+                    onClick={() => {
+                      const host = window.location.hostname;
+                      copy(`rtmp://${host}/live/${r.stream_name}?secret=${r.publish_secret}`);
+                      message.success('已复制 RTMP 推流地址');
+                    }}
+                  />
+                </Tooltip>
+                <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(r)} />
+                <Popconfirm title="轮换推流密钥?" onConfirm={() => rotateSecret(r.stream_name)}>
+                  <Button size="small">换推流密钥</Button>
+                </Popconfirm>
+                <Popconfirm title="轮换观看 Token?" onConfirm={() => rotateToken(r.stream_name)}>
+                  <Button size="small">换 Token</Button>
+                </Popconfirm>
+                <Popconfirm title="删除此直播间?" onConfirm={() => del(r.stream_name)}>
+                  <Button size="small" danger icon={<DeleteOutlined />} />
+                </Popconfirm>
+              </Space>
+            ),
+          },
+        ]}
       />
 
       <Modal
-        title={editingName ? '编辑直播配置' : '新建直播配置'}
-        open={modalOpen}
-        onOk={handleSave}
-        onCancel={() => { setModalOpen(false); form.resetFields(); setEditingName(null); }}
-        okText="保存"
-        cancelText="取消"
+        open={modal.open}
+        title={modal.row ? '编辑直播间' : '新建直播间'}
+        onCancel={() => setModal({ open: false })}
+        onOk={submit}
+        destroyOnHidden
       >
         <Form form={form} layout="vertical">
           <Form.Item
             name="stream_name"
-            label="流名称"
-            rules={[{ required: !editingName, message: '请输入流名称' }]}
+            label="流名 (URL 最后一段)"
+            rules={[{ required: true, pattern: /^[a-zA-Z0-9_-]+$/, message: '仅支持字母数字、下划线与连字符' }]}
           >
-            <Input disabled={!!editingName} placeholder="例如：livestream" />
+            <Input placeholder="例如 demo" disabled={!!modal.row} />
           </Form.Item>
           <Form.Item name="display_name" label="显示名称">
-            <Input placeholder="例如：我的直播" />
+            <Input placeholder="例如 我的直播间" />
           </Form.Item>
-          <Form.Item name="is_encrypted" label="启用加密" valuePropName="checked">
-            <Switch />
+          <Form.Item name="is_private" label="私有直播" valuePropName="checked">
+            <Switch checkedChildren="是" unCheckedChildren="否" />
           </Form.Item>
-          <Form.Item name="encryption_key" label="加密密钥">
-            <Input.Password placeholder="留空则不修改" />
+          <Form.Item name="chat_enabled" label="开启聊天" valuePropName="checked">
+            <Switch checkedChildren="开" unCheckedChildren="关" />
           </Form.Item>
-          <Form.Item name="require_auth" label="需要登录观看" valuePropName="checked">
-            <Switch />
+          <Form.Item name="publish_secret" label="推流密钥（留空自动生成）">
+            <Input.Password />
+          </Form.Item>
+          <Form.Item name="watch_token" label="观看 Token（私有流使用；留空自动生成）">
+            <Input.Password />
           </Form.Item>
         </Form>
       </Modal>

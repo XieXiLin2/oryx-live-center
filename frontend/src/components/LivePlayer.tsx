@@ -1,28 +1,69 @@
 import Artplayer from 'artplayer';
-import Hls from 'hls.js';
 import mpegts from 'mpegts.js';
 import React, { useEffect, useRef } from 'react';
 
 interface LivePlayerProps {
   url: string;
+  /** 'flv' (HTTP-FLV via mpegts.js) or 'webrtc' (WHEP). */
   format: string;
   style?: React.CSSProperties;
+}
+
+/**
+ * Establish a WebRTC WHEP session against SRS and attach the remote stream
+ * to the given <video> element.
+ *
+ * SRS implements the WHEP draft with a small extension:
+ *   POST {url}  Content-Type: application/sdp   Body: local offer SDP
+ *   → 200 OK   Body: answer SDP (application/sdp)
+ */
+async function playWebRTC(
+  video: HTMLVideoElement,
+  whepUrl: string,
+): Promise<RTCPeerConnection> {
+  const pc = new RTCPeerConnection({
+    iceServers: [{ urls: ['stun:stun.l.google.com:19302'] }],
+  });
+
+  pc.addTransceiver('video', { direction: 'recvonly' });
+  pc.addTransceiver('audio', { direction: 'recvonly' });
+
+  const remoteStream = new MediaStream();
+  video.srcObject = remoteStream;
+  pc.ontrack = (event) => {
+    remoteStream.addTrack(event.track);
+  };
+
+  const offer = await pc.createOffer();
+  await pc.setLocalDescription(offer);
+
+  const resp = await fetch(whepUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/sdp' },
+    body: offer.sdp || '',
+  });
+  if (!resp.ok) {
+    throw new Error(`WHEP ${resp.status}: ${await resp.text()}`);
+  }
+  const answerSdp = await resp.text();
+  await pc.setRemoteDescription({ type: 'answer', sdp: answerSdp });
+  return pc;
 }
 
 const LivePlayer: React.FC<LivePlayerProps> = ({ url, format, style }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const artRef = useRef<Artplayer | null>(null);
   const mpegtsRef = useRef<ReturnType<typeof mpegts.createPlayer> | null>(null);
-  const hlsRef = useRef<Hls | null>(null);
+  const pcRef = useRef<RTCPeerConnection | null>(null);
 
   useEffect(() => {
     if (!containerRef.current || !url) return;
 
-    // Destroy previous instance
+    // Tear down previous players.
     mpegtsRef.current?.destroy();
     mpegtsRef.current = null;
-    hlsRef.current?.destroy();
-    hlsRef.current = null;
+    pcRef.current?.close();
+    pcRef.current = null;
     if (artRef.current) {
       artRef.current.destroy();
       artRef.current = null;
@@ -33,6 +74,7 @@ const LivePlayer: React.FC<LivePlayerProps> = ({ url, format, style }) => {
       url,
       isLive: true,
       autoplay: true,
+      muted: false,
       autoSize: false,
       autoMini: false,
       loop: false,
@@ -49,6 +91,7 @@ const LivePlayer: React.FC<LivePlayerProps> = ({ url, format, style }) => {
       lang: 'zh-cn',
       moreVideoAttr: {
         crossOrigin: 'anonymous',
+        playsInline: true,
       },
     };
 
@@ -67,22 +110,21 @@ const LivePlayer: React.FC<LivePlayerProps> = ({ url, format, style }) => {
         },
       };
       options.type = 'flv';
-    } else if (format === 'hls') {
-      if (Hls.isSupported()) {
-        options.customType = {
-          m3u8: (video: HTMLVideoElement, streamUrl: string) => {
-            const hls = new Hls({
-              enableWorker: true,
-              lowLatencyMode: true,
+    } else if (format === 'webrtc') {
+      options.customType = {
+        webrtc: async (video: HTMLVideoElement, whepUrl: string) => {
+          try {
+            const pc = await playWebRTC(video, whepUrl);
+            pcRef.current = pc;
+            video.play().catch(() => {
+              // Autoplay may be blocked — Artplayer's play button will pick it up.
             });
-            hls.loadSource(streamUrl);
-            hls.attachMedia(video);
-            hlsRef.current = hls;
-          },
-        };
-        options.type = 'm3u8';
-      }
-      // Safari supports HLS natively
+          } catch (err) {
+            console.error('WebRTC play error:', err);
+          }
+        },
+      };
+      options.type = 'webrtc';
     }
 
     const art = new Artplayer(options);
@@ -91,8 +133,8 @@ const LivePlayer: React.FC<LivePlayerProps> = ({ url, format, style }) => {
     return () => {
       mpegtsRef.current?.destroy();
       mpegtsRef.current = null;
-      hlsRef.current?.destroy();
-      hlsRef.current = null;
+      pcRef.current?.close();
+      pcRef.current = null;
       if (artRef.current) {
         artRef.current.destroy();
         artRef.current = null;

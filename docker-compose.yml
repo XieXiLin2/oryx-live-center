@@ -1,12 +1,24 @@
 version: "3.8"
 
+# -----------------------------------------------------------------------------
+# SRS Live Center (origin node)
+#
+# Topology:
+#   - srs:        SRS 6 media server (RTMP/SRT/WebRTC/HTTP-FLV)
+#   - app:        FastAPI backend + static SPA (handles auth, rooms, hooks)
+#   - nginx:      Public front door. Routes / to app, /live/ + /rtc/ to SRS
+#   - redis:      Shared state / rate-limiting / session (optional).
+#
+# For an Edge node deployment see docs/srs-edge.md.
+# -----------------------------------------------------------------------------
+
 services:
   app:
     build: .
-    container_name: oryx-live-center
+    container_name: srs-live-center-app
     restart: unless-stopped
-    ports:
-      - "3000:8000"
+    expose:
+      - "8000"
     volumes:
       - app-data:/app/data
     env_file:
@@ -14,30 +26,45 @@ services:
     environment:
       - DATABASE_URL=sqlite+aiosqlite:///./data/app.db
       - DEBUG=false
-      - ORYX_API_URL=http://oryx:2022
-      - ORYX_HTTP_URL=http://oryx:2022
+      - SRS_HTTP_URL=http://srs:8080
+      - SRS_API_URL=http://srs:1985
+      - SRS_APP=live
     depends_on:
       - redis
-      - oryx
+      - srs
 
-  oryx:
-    image: ossrs/oryx:5
-    container_name: oryx-live-center-oryx
+  srs:
+    image: ossrs/srs:6
+    container_name: srs-live-center-srs
     restart: unless-stopped
+    command: ["./objs/srs", "-c", "conf/srs.conf"]
     ports:
-      - "1935:1935"       # RTMP push
-      - "8000:8000/udp"   # WebRTC UDP
-      - "10080:10080/udp" # SRT UDP
+      - "1935:1935"        # RTMP push
+      - "1985:1985"        # HTTP API (expose publicly only if you trust the LAN)
+      - "8080:8080"        # HTTP-FLV / HLS (nginx will proxy if desired)
+      - "8000:8000/udp"    # WebRTC UDP
+      - "10080:10080/udp"  # SRT UDP
     volumes:
-      - oryx-data:/data
+      - ./deploy/srs/srs.conf:/usr/local/srs/conf/srs.conf:ro
+      - srs-data:/usr/local/srs/objs/nginx/html
     environment:
       - CANDIDATE=${CANDIDATE:-}
-      - REACT_APP_LOCALE=zh
-      - MGMT_PASSWORD=${ORYX_MGMT_PASSWORD:-}
+
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: srs-live-center-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - ./deploy/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - app
+      - srs
 
   redis:
     image: redis:7-alpine
-    container_name: oryx-live-center-redis
+    container_name: srs-live-center-redis
     restart: unless-stopped
     volumes:
       - redis-data:/data
@@ -45,4 +72,4 @@ services:
 volumes:
   app-data:
   redis-data:
-  oryx-data:
+  srs-data:

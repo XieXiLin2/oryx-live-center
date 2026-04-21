@@ -1,78 +1,49 @@
 import {
-  ApiOutlined,
-  CameraOutlined,
-  CloudServerOutlined,
+  AppstoreOutlined,
   DashboardOutlined,
-  ForwardOutlined,
-  KeyOutlined,
-  LockOutlined,
   PlayCircleOutlined,
-  SafetyCertificateOutlined,
   SettingOutlined,
   TeamOutlined,
   VideoCameraOutlined,
 } from '@ant-design/icons';
-import { Layout, Menu, Typography } from 'antd';
+import { Layout, Menu, Result } from 'antd';
 import React from 'react';
 import { Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../store/auth';
 
 const { Sider, Content } = Layout;
-const { Text } = Typography;
+
+const items = [
+  { key: '/admin',              icon: <DashboardOutlined />,   label: '总览' },
+  { key: '/admin/streams',      icon: <VideoCameraOutlined />, label: '直播间管理' },
+  { key: '/admin/sessions',     icon: <PlayCircleOutlined />,  label: '播放统计' },
+  { key: '/admin/srs-clients',  icon: <AppstoreOutlined />,    label: 'SRS 客户端' },
+  { key: '/admin/users',        icon: <TeamOutlined />,        label: '用户管理' },
+  { key: '/admin/settings',     icon: <SettingOutlined />,     label: '系统设置' },
+];
 
 const AdminLayout: React.FC = () => {
-  const { user, loading } = useAuth();
+  const { user } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
-  if (loading) return null;
-  if (!user?.is_admin) return <Navigate to="/" replace />;
-
-  const menuItems = [
-    { key: '/admin', icon: <DashboardOutlined />, label: '概览' },
-    { key: '/admin/streams', icon: <VideoCameraOutlined />, label: '直播管理' },
-    { key: '/admin/users', icon: <TeamOutlined />, label: '用户管理' },
-    {
-      key: 'oryx',
-      icon: <CloudServerOutlined />,
-      label: 'Oryx 管理',
-      children: [
-        { key: '/admin/oryx/clients', icon: <TeamOutlined />, label: '客户端' },
-        { key: '/admin/oryx/secret', icon: <KeyOutlined />, label: '推流密钥' },
-        { key: '/admin/oryx/dvr', icon: <VideoCameraOutlined />, label: '录制 (DVR)' },
-        { key: '/admin/oryx/hls', icon: <PlayCircleOutlined />, label: 'HLS 配置' },
-        { key: '/admin/oryx/forward', icon: <ForwardOutlined />, label: '转推/转发' },
-        { key: '/admin/oryx/transcode', icon: <CloudServerOutlined />, label: '转码' },
-        { key: '/admin/oryx/vlive', icon: <PlayCircleOutlined />, label: '虚拟直播' },
-        { key: '/admin/oryx/camera', icon: <CameraOutlined />, label: 'IP 摄像头' },
-        { key: '/admin/oryx/hooks', icon: <ApiOutlined />, label: 'HTTP 回调' },
-        { key: '/admin/oryx/limits', icon: <LockOutlined />, label: '系统限制' },
-        { key: '/admin/oryx/cert', icon: <SafetyCertificateOutlined />, label: 'SSL 证书' },
-      ],
-    },
-    { key: '/admin/settings', icon: <SettingOutlined />, label: '系统设置' },
-  ];
-
-  const selectedKey = location.pathname;
+  if (!user) return <Navigate to="/" replace />;
+  if (!user.is_admin) {
+    return <Result status="403" title="403" subTitle="无权访问管理后台" />;
+  }
 
   return (
-    <Layout style={{ minHeight: 'calc(100vh - 128px)', borderRadius: 8, overflow: 'hidden' }}>
-      <Sider width={220} theme="light" breakpoint="lg" collapsedWidth={0}>
-        <div style={{ padding: '16px', borderBottom: '1px solid #f0f0f0' }}>
-          <Text strong>
-            <SettingOutlined /> 管理后台
-          </Text>
-        </div>
+    <Layout style={{ background: 'transparent', minHeight: 'calc(100vh - 134px)' }}>
+      <Sider width={220} style={{ background: '#fff', borderRadius: 8 }}>
         <Menu
           mode="inline"
-          selectedKeys={[selectedKey]}
-          defaultOpenKeys={['oryx']}
-          items={menuItems}
+          selectedKeys={[location.pathname]}
+          items={items}
           onClick={({ key }) => navigate(key)}
-          style={{ border: 'none' }}
+          style={{ border: 'none', borderRadius: 8, paddingTop: 16 }}
         />
       </Sider>
-      <Content style={{ padding: 24, background: '#fff' }}>
+      <Content style={{ paddingLeft: 24 }}>
         <Outlet />
       </Content>
     </Layout>

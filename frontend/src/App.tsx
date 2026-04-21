@@ -1,4 +1,4 @@
-import { ConfigProvider, Spin, theme } from 'antd';
+import { App as AntdApp, ConfigProvider, Spin, theme } from 'antd';
 import zhCN from 'antd/locale/zh_CN';
 import React from 'react';
 import { BrowserRouter, Route, Routes } from 'react-router-dom';
@@ -7,20 +7,9 @@ import AuthCallback from './pages/AuthCallback';
 import Home from './pages/Home';
 import AdminLayout from './pages/admin/AdminLayout';
 import Dashboard from './pages/admin/Dashboard';
-import OryxClients from './pages/admin/OryxClients';
-import {
-  AdminSettings,
-  OryxCamera,
-  OryxCert,
-  OryxDvr,
-  OryxForward,
-  OryxHls,
-  OryxHooks,
-  OryxLimits,
-  OryxSecret,
-  OryxTranscode,
-  OryxVlive,
-} from './pages/admin/OryxPages';
+import Sessions from './pages/admin/Sessions';
+import Settings from './pages/admin/Settings';
+import SrsClients from './pages/admin/SrsClients';
 import StreamsManage from './pages/admin/StreamsManage';
 import UsersManage from './pages/admin/UsersManage';
 import { AuthProvider, useAuth } from './store/auth';
@@ -44,19 +33,10 @@ const AppContent: React.FC = () => {
         <Route path="admin" element={<AdminLayout />}>
           <Route index element={<Dashboard />} />
           <Route path="streams" element={<StreamsManage />} />
+          <Route path="sessions" element={<Sessions />} />
+          <Route path="srs-clients" element={<SrsClients />} />
           <Route path="users" element={<UsersManage />} />
-          <Route path="oryx/clients" element={<OryxClients />} />
-          <Route path="oryx/secret" element={<OryxSecret />} />
-          <Route path="oryx/dvr" element={<OryxDvr />} />
-          <Route path="oryx/hls" element={<OryxHls />} />
-          <Route path="oryx/forward" element={<OryxForward />} />
-          <Route path="oryx/transcode" element={<OryxTranscode />} />
-          <Route path="oryx/vlive" element={<OryxVlive />} />
-          <Route path="oryx/camera" element={<OryxCamera />} />
-          <Route path="oryx/hooks" element={<OryxHooks />} />
-          <Route path="oryx/limits" element={<OryxLimits />} />
-          <Route path="oryx/cert" element={<OryxCert />} />
-          <Route path="settings" element={<AdminSettings />} />
+          <Route path="settings" element={<Settings />} />
         </Route>
       </Route>
     </Routes>
@@ -75,11 +55,13 @@ const App: React.FC = () => {
         },
       }}
     >
-      <BrowserRouter>
-        <AuthProvider>
-          <AppContent />
-        </AuthProvider>
-      </BrowserRouter>
+      <AntdApp>
+        <BrowserRouter>
+          <AuthProvider>
+            <AppContent />
+          </AuthProvider>
+        </BrowserRouter>
+      </AntdApp>
     </ConfigProvider>
   );
 };

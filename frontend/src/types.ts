@@ -6,7 +6,9 @@ export interface User {
   email: string;
   avatar_url: string;
   is_admin: boolean;
+  is_banned?: boolean;
   created_at: string;
+  last_login?: string;
 }
 
 // ---- Auth ----
@@ -44,6 +46,12 @@ export interface WsMessage {
   online_count?: number;
 }
 
+export interface ChatRoomConfig {
+  stream_name: string;
+  chat_enabled: boolean;
+  require_login_to_send: boolean;
+}
+
 // ---- Stream ----
 export interface StreamInfo {
   name: string;
@@ -52,8 +60,9 @@ export interface StreamInfo {
   video_codec: string | null;
   audio_codec: string | null;
   clients: number;
-  is_encrypted: boolean;
-  require_auth: boolean;
+  is_private: boolean;
+  chat_enabled: boolean;
+  is_live: boolean;
   formats: string[];
 }
 
@@ -67,8 +76,15 @@ export interface StreamConfig {
   id: number;
   stream_name: string;
   display_name: string;
-  is_encrypted: boolean;
-  require_auth: boolean;
+  is_private: boolean;
+  publish_secret: string;
+  watch_token: string;
+  chat_enabled: boolean;
+  is_live: boolean;
+  viewer_count: number;
+  total_play_count: number;
+  last_publish_at: string | null;
+  last_unpublish_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -82,4 +98,25 @@ export interface UserListResponse {
 export interface ChatHistoryResponse {
   messages: ChatMessage[];
   total: number;
+}
+
+export interface StreamPlaySessionItem {
+  id: number;
+  srs_client_id: string;
+  stream_name: string;
+  user_id: number | null;
+  client_ip: string;
+  started_at: string;
+  ended_at: string | null;
+  duration_seconds: number;
+}
+
+export interface StreamPublishSessionItem {
+  id: number;
+  srs_client_id: string;
+  stream_name: string;
+  client_ip: string;
+  started_at: string;
+  ended_at: string | null;
+  duration_seconds: number;
 }

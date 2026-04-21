@@ -1,7 +1,7 @@
 [project]
-name = "oryx-live-center"
-version = "1.0.0"
-description = "Oryx Live Center - Live streaming management platform"
+name = "srs-live-center"
+version = "2.0.0"
+description = "SRS Live Center - Live streaming management platform on top of SRS 6"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115.0",

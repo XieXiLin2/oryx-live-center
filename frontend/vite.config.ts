@@ -1,6 +1,8 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
+// In dev, the FastAPI backend listens on :8000 and proxies media to SRS.
+// In production, Nginx is the front door; see deploy/nginx/nginx.conf.
 export default defineConfig({
   plugins: [react()],
   server: {
@@ -9,19 +11,16 @@ export default defineConfig({
       '/api': {
         target: 'http://localhost:8000',
         changeOrigin: true,
-      },
-      '/ws': {
-        target: 'ws://localhost:8000',
         ws: true,
       },
-      // Oryx media streams (FLV, HLS, TS) reverse proxy in dev
+      // FLV via FastAPI's reverse proxy (dev only).
       '/live': {
-        target: 'http://localhost:2022',
+        target: 'http://localhost:8000',
         changeOrigin: true,
       },
-      // Oryx WebRTC signaling (WHIP/WHEP) proxy in dev
+      // WebRTC WHIP/WHEP signaling via FastAPI's reverse proxy.
       '/rtc': {
-        target: 'http://localhost:2022',
+        target: 'http://localhost:8000',
         changeOrigin: true,
       },
     },

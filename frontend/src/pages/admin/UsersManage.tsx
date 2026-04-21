@@ -1,134 +1,106 @@
-import { SearchOutlined, StopOutlined, UserOutlined } from '@ant-design/icons';
-import { Avatar, Button, Input, message, Popconfirm, Space, Table, Tag, Typography } from 'antd';
-import type { ColumnsType } from 'antd/es/table';
-import React, { useCallback, useEffect, useState } from 'react';
+import { ReloadOutlined } from '@ant-design/icons';
+import { App, Avatar, Button, Input, Space, Switch, Table, Tag, Typography } from 'antd';
+import React, { useEffect, useState } from 'react';
 import { adminApi } from '../../api';
 import type { User } from '../../types';
 
 const { Title } = Typography;
 
 const UsersManage: React.FC = () => {
-  const [users, setUsers] = useState<User[]>([]);
+  const { message } = App.useApp();
+  const [rows, setRows] = useState<User[]>([]);
   const [total, setTotal] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
-  const pageSize = 20;
+  const [search, setSearch] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const fetchUsers = useCallback(async () => {
+  const PAGE_SIZE = 20;
+
+  const load = async () => {
     setLoading(true);
     try {
       const data = await adminApi.listUsers({
-        limit: pageSize,
-        offset: (page - 1) * pageSize,
-        search,
+        limit: PAGE_SIZE,
+        offset: (page - 1) * PAGE_SIZE,
+        search: search || undefined,
       });
-      setUsers(data.users);
+      setRows(data.users);
       setTotal(data.total);
-    } catch {
-      message.error('获取用户列表失败');
     } finally {
       setLoading(false);
     }
-  }, [page, search]);
-
-  useEffect(() => {
-    fetchUsers();
-  }, [fetchUsers]);
-
-  const handleBan = async (userId: number, ban: boolean) => {
-    try {
-      await adminApi.banUser(userId, ban);
-      message.success(ban ? '已封禁用户' : '已解封用户');
-      fetchUsers();
-    } catch {
-      message.error('操作失败');
-    }
   };
 
-  const columns: ColumnsType<User> = [
-    {
-      title: '用户',
-      key: 'user',
-      render: (_, record) => (
-        <Space>
-          <Avatar
-            src={record.avatar_url || undefined}
-            icon={!record.avatar_url ? <UserOutlined /> : undefined}
-            size="small"
-          />
-          <span>{record.display_name || record.username}</span>
-        </Space>
-      ),
-    },
-    { title: '用户名', dataIndex: 'username', key: 'username' },
-    { title: '邮箱', dataIndex: 'email', key: 'email' },
-    {
-      title: '角色',
-      key: 'role',
-      render: (_, record) => (
-        <Space>
-          {record.is_admin && <Tag color="red">管理员</Tag>}
-        </Space>
-      ),
-    },
-    {
-      title: '注册时间',
-      dataIndex: 'created_at',
-      key: 'created_at',
-      render: (v: string) => new Date(v).toLocaleString(),
-    },
-    {
-      title: '操作',
-      key: 'actions',
-      render: (_, record) => (
-        <Space>
-          {record.is_admin ? (
-            <Tag color="blue">管理员</Tag>
-          ) : (
-            <Popconfirm
-              title={`确定要${'封禁'}此用户吗？`}
-              onConfirm={() => handleBan(record.id, true)}
-            >
-              <Button size="small" danger icon={<StopOutlined />}>
-                封禁
-              </Button>
-            </Popconfirm>
-          )}
-        </Space>
-      ),
-    },
-  ];
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, [page]);
+
+  const toggleBan = async (u: User, banned: boolean) => {
+    await adminApi.banUser(u.id, banned);
+    message.success(banned ? '已封禁' : '已解封');
+    load();
+  };
 
   return (
     <div>
-      <Title level={4}>
-        <UserOutlined /> 用户管理
-      </Title>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
+        <Title level={3} style={{ margin: 0 }}>用户管理</Title>
+        <Space>
+          <Input.Search
+            placeholder="搜索用户名 / 邮箱"
+            allowClear
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            onSearch={() => { setPage(1); load(); }}
+            style={{ width: 240 }}
+          />
+          <Button icon={<ReloadOutlined />} onClick={load}>刷新</Button>
+        </Space>
+      </div>
 
-      <Space style={{ marginBottom: 16 }}>
-        <Input
-          placeholder="搜索用户..."
-          prefix={<SearchOutlined />}
-          value={search}
-          onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-          allowClear
-          style={{ width: 300 }}
-        />
-      </Space>
-
-      <Table
-        columns={columns}
-        dataSource={users}
+      <Table<User>
         rowKey="id"
         loading={loading}
+        dataSource={rows}
         pagination={{
           current: page,
-          pageSize,
+          pageSize: PAGE_SIZE,
           total,
           onChange: setPage,
-          showTotal: (t) => `共 ${t} 个用户`,
         }}
+        columns={[
+          { title: '#', dataIndex: 'id', width: 80 },
+          {
+            title: '用户',
+            render: (_, u) => (
+              <Space>
+                <Avatar src={u.avatar_url || undefined} size="small">
+                  {(u.display_name || u.username)[0]}
+                </Avatar>
+                <span>{u.display_name || u.username}</span>
+              </Space>
+            ),
+          },
+          { title: '邮箱', dataIndex: 'email' },
+          {
+            title: '角色',
+            render: (_, u) => u.is_admin ? <Tag color="purple">管理员</Tag> : <Tag>普通用户</Tag>,
+          },
+          {
+            title: '状态',
+            render: (_, u) => u.is_banned
+              ? <Tag color="red">封禁</Tag>
+              : <Tag color="green">正常</Tag>,
+          },
+          { title: '注册时间', dataIndex: 'created_at' },
+          {
+            title: '封禁',
+            render: (_, u) => (
+              <Switch
+                checked={!!u.is_banned}
+                onChange={(v) => toggleBan(u, v)}
+              />
+            ),
+          },
+        ]}
       />
     </div>
   );

@@ -7,10 +7,15 @@ class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
 
     # App
-    app_name: str = "Oryx Live Center"
+    app_name: str = "SRS Live Center"
     app_secret_key: str = "change-me-in-production"
     debug: bool = False
     allowed_origins: str = "http://localhost:5173"
+
+    # Public base URL — what the end user / browser sees (Nginx front-facing).
+    # Used to construct play URLs for FLV / WebRTC WHEP.
+    # Example: https://live.example.com
+    public_base_url: str = ""
 
     # Database
     database_url: str = "sqlite+aiosqlite:///./data/app.db"
@@ -27,22 +32,33 @@ class Settings(BaseSettings):
     oauth2_logout_url: str = ""
     oauth2_redirect_uri: str = "http://localhost:5173/auth/callback"
     oauth2_scope: str = "openid profile email"
-    oauth2_admin_group: str = "oryx-admin"
+    oauth2_admin_group: str = "srs-admin"
 
-    # Oryx (all-in-one, port 2022 is the main entry)
-    oryx_api_url: str = "http://localhost:2022"
-    oryx_api_secret: str = ""  # Auto-populated at startup via login
-    oryx_mgmt_password: str = ""  # Oryx MGMT_PASSWORD for auto-login
-    oryx_http_url: str = "http://localhost:2022"
+    # ------------------------------------------------------------------
+    # SRS 6 configuration (direct integration, no Oryx).
+    # ------------------------------------------------------------------
+    # Internal HTTP endpoint of the SRS "HTTP server" (HTTP-FLV).
+    # Default SRS port is 8080.
+    srs_http_url: str = "http://srs:8080"
 
-    # CDN
-    cdn_base_url: str = ""
-    cdn_pull_secret: str = ""
+    # Internal HTTP endpoint of the SRS HTTP API (for stream / client query).
+    # Default SRS API port is 1985.
+    srs_api_url: str = "http://srs:1985"
 
+    # Default application name used by clients pushing/pulling streams.
+    srs_app: str = "live"
+
+    # Optional shared secret for SRS http_hooks callbacks.
+    # If set, SRS must include it in the callback URL (e.g. as ?hook_secret=xxx)
+    # so that the backend can verify callbacks are coming from SRS, not forged.
+    srs_hook_secret: str = ""
+
+    # ------------------------------------------------------------------
     # JWT
+    # ------------------------------------------------------------------
     jwt_secret: str = "change-me-jwt-secret"
     jwt_algorithm: str = "HS256"
-    jwt_expire_minutes: int = 1440  # 24 hours
+    jwt_expire_minutes: int = 1440  # 24 hours for login JWT
 
     model_config = {
         "env_file": ".env",

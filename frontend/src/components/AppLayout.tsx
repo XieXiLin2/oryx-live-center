@@ -61,7 +61,7 @@ const AppLayout: React.FC = () => {
         <Space>
           <PlayCircleOutlined style={{ fontSize: 24, color: themeToken.colorPrimary }} />
           <Text strong style={{ fontSize: 18 }}>
-            Oryx Live Center
+            SRS Live Center
           </Text>
           <Menu
             mode="horizontal"
@@ -97,7 +97,7 @@ const AppLayout: React.FC = () => {
       </Content>
 
       <Footer style={{ textAlign: 'center', color: themeToken.colorTextSecondary }}>
-        Oryx Live Center ©{new Date().getFullYear()}
+        SRS Live Center ©{new Date().getFullYear()}
       </Footer>
     </Layout>
   );

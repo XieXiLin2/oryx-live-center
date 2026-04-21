@@ -1,8 +1,9 @@
-import { LoginOutlined, SendOutlined, UserOutlined } from '@ant-design/icons';
-import { Avatar, Badge, Button, Input, Space, Tag, Typography } from 'antd';
+import { LoginOutlined, SendOutlined, StopOutlined, UserOutlined } from '@ant-design/icons';
+import { Avatar, Badge, Button, Empty, Input, Space, Tag, Typography } from 'antd';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { streamApi } from '../api';
 import { useAuth } from '../store/auth';
-import type { WsMessage } from '../types';
+import type { ChatRoomConfig, WsMessage } from '../types';
 
 const { Text } = Typography;
 
@@ -16,6 +17,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ streamName }) => {
   const [inputValue, setInputValue] = useState('');
   const [onlineCount, setOnlineCount] = useState(0);
   const [connected, setConnected] = useState(false);
+  const [config, setConfig] = useState<ChatRoomConfig | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -25,45 +27,56 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ streamName }) => {
     }
   }, []);
 
+  // Load chat config for this room.
   useEffect(() => {
     if (!streamName) return;
+    let cancelled = false;
+    streamApi
+      .getChatConfig(streamName)
+      .then((c) => {
+        if (!cancelled) setConfig(c);
+      })
+      .catch(() => {
+        if (!cancelled) setConfig({ stream_name: streamName, chat_enabled: true, require_login_to_send: true });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [streamName]);
+
+  // Open WebSocket only when chat is enabled.
+  useEffect(() => {
+    if (!streamName || !config?.chat_enabled) {
+      return;
+    }
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/api/chat/ws/${streamName}${token ? `?token=${token}` : ''}`;
+    const wsUrl = `${protocol}//${window.location.host}/api/chat/ws/${streamName}${
+      token ? `?token=${token}` : ''
+    }`;
 
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
 
-    ws.onopen = () => {
-      setConnected(true);
-    };
-
+    ws.onopen = () => setConnected(true);
     ws.onmessage = (event) => {
       try {
         const msg: WsMessage = JSON.parse(event.data);
-        if (msg.online_count !== undefined) {
-          setOnlineCount(msg.online_count);
-        }
-        setMessages((prev) => [...prev.slice(-200), msg]); // Keep last 200 messages
+        if (msg.online_count !== undefined) setOnlineCount(msg.online_count);
+        setMessages((prev) => [...prev.slice(-200), msg]);
         setTimeout(scrollToBottom, 50);
       } catch (e) {
         console.error('Failed to parse WS message:', e);
       }
     };
-
-    ws.onclose = () => {
-      setConnected(false);
-    };
-
-    ws.onerror = () => {
-      setConnected(false);
-    };
+    ws.onclose = () => setConnected(false);
+    ws.onerror = () => setConnected(false);
 
     return () => {
       ws.close();
       wsRef.current = null;
     };
-  }, [streamName, token, scrollToBottom]);
+  }, [streamName, token, scrollToBottom, config?.chat_enabled]);
 
   const sendMessage = () => {
     if (!inputValue.trim() || !wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
@@ -81,7 +94,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ streamName }) => {
         </div>
       );
     }
-
     if (msg.type === 'error') {
       return (
         <div key={index} style={{ textAlign: 'center', padding: '4px 0' }}>
@@ -91,7 +103,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ streamName }) => {
         </div>
       );
     }
-
     return (
       <div key={msg.id || index} style={{ padding: '4px 8px', borderRadius: 4 }}>
         <Space size={4} align="start">
@@ -120,6 +131,28 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ streamName }) => {
     );
   };
 
+  // When chat is disabled globally for this room, render a minimal disabled panel.
+  if (config && !config.chat_enabled) {
+    return (
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          height: '100%',
+          border: '1px solid #f0f0f0',
+          borderRadius: 8,
+          overflow: 'hidden',
+          justifyContent: 'center',
+        }}
+      >
+        <Empty
+          image={<StopOutlined style={{ fontSize: 40, color: '#d9d9d9' }} />}
+          description={<Text type="secondary">该直播间未开启弹幕</Text>}
+        />
+      </div>
+    );
+  }
+
   return (
     <div
       style={{
@@ -131,7 +164,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ streamName }) => {
         overflow: 'hidden',
       }}
     >
-      {/* Header */}
       <div
         style={{
           padding: '8px 12px',
@@ -141,7 +173,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ streamName }) => {
           alignItems: 'center',
         }}
       >
-        <Text strong>聊天</Text>
+        <Text strong>弹幕</Text>
         <Space>
           <Badge status={connected ? 'success' : 'error'} />
           <Text type="secondary" style={{ fontSize: 12 }}>
@@ -150,7 +182,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ streamName }) => {
         </Space>
       </div>
 
-      {/* Messages */}
       <div ref={listRef} style={{ flex: 1, overflowY: 'auto', padding: '8px 0' }}>
         {messages.length === 0 ? (
           <div style={{ textAlign: 'center', padding: 24 }}>
@@ -161,7 +192,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ streamName }) => {
         )}
       </div>
 
-      {/* Input */}
       <div style={{ padding: 8, borderTop: '1px solid #f0f0f0' }}>
         {user ? (
           <Space.Compact style={{ width: '100%' }}>

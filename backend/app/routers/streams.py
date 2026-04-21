@@ -1,18 +1,23 @@
-"""Stream routes - list live streams, get play URLs."""
+"""Stream routes - list live rooms, get play URLs, manage configs."""
+
+from __future__ import annotations
 
 import logging
+import secrets
 from typing import Optional
+from urllib.parse import urlencode
 
-import httpx
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app import srs_client
 from app.auth import get_current_user, require_admin
 from app.config import settings
 from app.database import get_db
 from app.models import StreamConfig, User
 from app.schemas import (
+    ChatRoomConfig,
     StreamConfigRequest,
     StreamConfigResponse,
     StreamInfo,
@@ -25,104 +30,72 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/streams", tags=["streams"])
 
 
-async def _get_oryx_streams() -> list[dict]:
-    """Fetch live streams from Oryx/SRS API."""
-    try:
-        headers = {}
-        if settings.oryx_api_secret:
-            headers["Authorization"] = f"Bearer {settings.oryx_api_secret}"
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.get(
-                f"{settings.oryx_api_url}/api/v1/streams/",
-                headers=headers,
-            )
-            response.raise_for_status()
-            data = response.json()
-            return data.get("streams", [])
-    except Exception as e:
-        logger.error(f"Failed to fetch streams from Oryx: {e}")
-        return []
+def _play_base() -> str:
+    """Prefer `public_base_url` for constructing play URLs; otherwise use relative."""
+    return settings.public_base_url.rstrip("/") if settings.public_base_url else ""
 
 
-def _get_stream_formats(stream: dict) -> list[str]:
-    """Determine available formats for a stream."""
-    formats = ["flv", "hls"]
-    # SRS supports these by default
-    if stream.get("video"):
-        formats.append("webrtc")
-    return formats
+def _build_flv_url(stream_name: str, token: str = "") -> str:
+    base = _play_base()
+    qs = f"?{urlencode({'token': token})}" if token else ""
+    return f"{base}/{settings.srs_app}/{stream_name}.flv{qs}"
 
 
-def _build_stream_url(stream_name: str, app: str, fmt: str) -> str:
-    """Build a stream play URL based on format.
+def _build_whep_url(stream_name: str, token: str = "") -> str:
+    base = _play_base()
+    params: dict[str, str] = {"app": settings.srs_app, "stream": stream_name}
+    if token:
+        params["token"] = token
+    return f"{base}/rtc/v1/whep/?{urlencode(params)}"
 
-    When CDN is configured, use CDN base URL.
-    Otherwise, use relative paths that are reverse-proxied through our backend
-    to the Oryx HTTP server. This way the frontend never needs to know Oryx's address.
-    """
-    if settings.cdn_base_url:
-        base = settings.cdn_base_url
-    else:
-        # Use relative path — our main.py reverse proxy handles /live/ and /rtc/
-        base = ""
 
-    if fmt == "flv":
-        return f"{base}/{app}/{stream_name}.flv"
-    elif fmt == "hls":
-        return f"{base}/{app}/{stream_name}.m3u8"
-    elif fmt == "webrtc":
-        return f"{base}/rtc/v1/whep/?app={app}&stream={stream_name}"
-    elif fmt == "rtmp":
-        # RTMP must go directly to the RTMP port (1935), cannot be proxied over HTTP
-        return f"rtmp://localhost/{app}/{stream_name}"
-    else:
-        return f"{base}/{app}/{stream_name}.flv"
+# ---------------------------------------------------------------------------
+# Public listing
+# ---------------------------------------------------------------------------
 
 
 @router.get("/", response_model=StreamListResponse)
 async def list_streams(
     db: AsyncSession = Depends(get_db),
-    user: Optional[User] = Depends(get_current_user),
-):
-    """List all online live streams."""
-    oryx_streams = await _get_oryx_streams()
+    _user: Optional[User] = Depends(get_current_user),
+) -> StreamListResponse:
+    """List all configured live rooms, merged with live state from SRS."""
+    # 1. All configured rooms (these are shown in the UI).
+    result = await db.execute(select(StreamConfig).order_by(StreamConfig.created_at))
+    configs = list(result.scalars().all())
 
-    streams = []
-    for s in oryx_streams:
-        name = s.get("name", "")
-        app = s.get("app", "live")
+    # 2. Currently active SRS streams (to annotate live state / codec / viewers).
+    live_rows = await srs_client.list_streams()
+    live_map = {row.get("name", ""): row for row in live_rows if row.get("name")}
 
-        # Check stream config
-        result = await db.execute(select(StreamConfig).where(StreamConfig.stream_name == name))
-        config = result.scalar_one_or_none()
+    out: list[StreamInfo] = []
+    for cfg in configs:
+        live = live_map.get(cfg.stream_name)
+        video = (live or {}).get("video") or {}
+        audio = (live or {}).get("audio") or {}
+        formats = srs_client.stream_formats(live or {}) if live else ["flv", "webrtc"]
 
-        display_name = name
-        is_encrypted = False
-        require_auth = False
-
-        if config:
-            display_name = config.display_name or name
-            is_encrypted = config.is_encrypted
-            require_auth = config.require_auth
-
-        video = s.get("video", {})
-        audio = s.get("audio", {})
-
-        streams.append(
+        out.append(
             StreamInfo(
-                name=name,
-                display_name=display_name,
-                app=app,
+                name=cfg.stream_name,
+                display_name=cfg.display_name or cfg.stream_name,
+                app=(live or {}).get("app", settings.srs_app),
                 video_codec=video.get("codec") if video else None,
                 audio_codec=audio.get("codec") if audio else None,
-                clients=s.get("clients", 0),
-                is_encrypted=is_encrypted,
-                require_auth=require_auth,
-                formats=_get_stream_formats(s),
+                clients=(live or {}).get("clients", cfg.viewer_count),
+                is_private=cfg.is_private,
+                chat_enabled=cfg.chat_enabled,
+                is_live=bool(live) or cfg.is_live,
+                formats=formats,
             )
         )
 
-    return StreamListResponse(streams=streams)
+    return StreamListResponse(streams=out)
+
+
+# ---------------------------------------------------------------------------
+# Play URL
+# ---------------------------------------------------------------------------
 
 
 @router.post("/play", response_model=StreamPlayResponse)
@@ -130,57 +103,68 @@ async def get_play_url(
     request: StreamPlayRequest,
     db: AsyncSession = Depends(get_db),
     user: Optional[User] = Depends(get_current_user),
-):
-    """Get play URL for a stream. Handles authentication and encryption."""
-    # Check stream config
+) -> StreamPlayResponse:
+    """Return a playable URL for the given stream, enforcing privacy."""
+    fmt = request.format.lower()
+    if fmt not in ("flv", "webrtc"):
+        raise HTTPException(status_code=400, detail="Unsupported format (supported: flv, webrtc)")
+
     result = await db.execute(select(StreamConfig).where(StreamConfig.stream_name == request.stream_name))
     config = result.scalar_one_or_none()
 
-    if config:
-        # Check if auth required
-        if config.require_auth and user is None:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Authentication required to watch this stream",
-            )
-
-        # Check encryption key
-        if config.is_encrypted and config.encryption_key:
-            if request.key != config.encryption_key:
+    token_param = ""
+    if config is not None and config.is_private:
+        # Authorize caller: either a valid JWT user OR a matching watch_token.
+        if user is None or user.is_banned:
+            if not request.token or request.token != config.watch_token:
                 raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Invalid stream key",
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Authentication or watch token required",
                 )
+            token_param = config.watch_token
+        else:
+            # Logged-in user: forward the watch_token (SRS will validate in on_play).
+            token_param = config.watch_token or ""
 
-    # Determine app name from oryx
-    oryx_streams = await _get_oryx_streams()
-    app = "live"
-    for s in oryx_streams:
-        if s.get("name") == request.stream_name:
-            app = s.get("app", "live")
-            break
+    if fmt == "flv":
+        url = _build_flv_url(request.stream_name, token_param)
+    else:
+        url = _build_whep_url(request.stream_name, token_param)
 
-    url = _build_stream_url(request.stream_name, app, request.format)
+    return StreamPlayResponse(url=url, stream_name=request.stream_name, format=fmt)
 
-    return StreamPlayResponse(
-        url=url,
-        stream_name=request.stream_name,
-        format=request.format,
+
+# ---------------------------------------------------------------------------
+# Chat config for the room (frontend uses this to decide UI)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/{stream_name}/chat-config", response_model=ChatRoomConfig)
+async def get_chat_config(stream_name: str, db: AsyncSession = Depends(get_db)) -> ChatRoomConfig:
+    result = await db.execute(select(StreamConfig).where(StreamConfig.stream_name == stream_name))
+    config = result.scalar_one_or_none()
+    if config is None:
+        # Room not configured — default to enabled, login required.
+        return ChatRoomConfig(stream_name=stream_name, chat_enabled=True, require_login_to_send=True)
+    return ChatRoomConfig(
+        stream_name=stream_name,
+        chat_enabled=bool(config.chat_enabled),
+        require_login_to_send=True,
     )
 
 
-# ---- Admin: Stream Config ----
+# ---------------------------------------------------------------------------
+# Admin: CRUD over StreamConfig (live rooms)
+# ---------------------------------------------------------------------------
 
 
 @router.get("/config", response_model=list[StreamConfigResponse])
 async def list_stream_configs(
     db: AsyncSession = Depends(get_db),
-    admin: User = Depends(require_admin),
-):
-    """List all stream configurations (admin only)."""
+    _admin: User = Depends(require_admin),
+) -> list[StreamConfigResponse]:
     result = await db.execute(select(StreamConfig).order_by(StreamConfig.stream_name))
-    configs = result.scalars().all()
-    return [StreamConfigResponse.model_validate(c) for c in configs]
+    return [StreamConfigResponse.model_validate(c) for c in result.scalars().all()]
 
 
 @router.put("/config/{stream_name}", response_model=StreamConfigResponse)
@@ -188,25 +172,61 @@ async def update_stream_config(
     stream_name: str,
     request: StreamConfigRequest,
     db: AsyncSession = Depends(get_db),
-    admin: User = Depends(require_admin),
-):
-    """Create or update stream configuration (admin only)."""
+    _admin: User = Depends(require_admin),
+) -> StreamConfigResponse:
     result = await db.execute(select(StreamConfig).where(StreamConfig.stream_name == stream_name))
     config = result.scalar_one_or_none()
 
     if config is None:
         config = StreamConfig(stream_name=stream_name)
+        # Auto-generate secrets if absent — admin can rotate later.
+        config.publish_secret = request.publish_secret or secrets.token_urlsafe(16)
+        config.watch_token = request.watch_token or secrets.token_urlsafe(24)
         db.add(config)
 
     if request.display_name is not None:
         config.display_name = request.display_name
-    if request.is_encrypted is not None:
-        config.is_encrypted = request.is_encrypted
-    if request.encryption_key is not None:
-        config.encryption_key = request.encryption_key
-    if request.require_auth is not None:
-        config.require_auth = request.require_auth
+    if request.is_private is not None:
+        config.is_private = request.is_private
+    if request.publish_secret is not None:
+        config.publish_secret = request.publish_secret
+    if request.watch_token is not None:
+        config.watch_token = request.watch_token
+    if request.chat_enabled is not None:
+        config.chat_enabled = request.chat_enabled
 
+    await db.flush()
+    await db.refresh(config)
+    return StreamConfigResponse.model_validate(config)
+
+
+@router.post("/config/{stream_name}/rotate-publish-secret", response_model=StreamConfigResponse)
+async def rotate_publish_secret(
+    stream_name: str,
+    db: AsyncSession = Depends(get_db),
+    _admin: User = Depends(require_admin),
+) -> StreamConfigResponse:
+    result = await db.execute(select(StreamConfig).where(StreamConfig.stream_name == stream_name))
+    config = result.scalar_one_or_none()
+    if config is None:
+        raise HTTPException(status_code=404, detail="Stream not found")
+    config.publish_secret = secrets.token_urlsafe(16)
+    await db.flush()
+    await db.refresh(config)
+    return StreamConfigResponse.model_validate(config)
+
+
+@router.post("/config/{stream_name}/rotate-watch-token", response_model=StreamConfigResponse)
+async def rotate_watch_token(
+    stream_name: str,
+    db: AsyncSession = Depends(get_db),
+    _admin: User = Depends(require_admin),
+) -> StreamConfigResponse:
+    result = await db.execute(select(StreamConfig).where(StreamConfig.stream_name == stream_name))
+    config = result.scalar_one_or_none()
+    if config is None:
+        raise HTTPException(status_code=404, detail="Stream not found")
+    config.watch_token = secrets.token_urlsafe(24)
     await db.flush()
     await db.refresh(config)
     return StreamConfigResponse.model_validate(config)
@@ -216,13 +236,11 @@ async def update_stream_config(
 async def delete_stream_config(
     stream_name: str,
     db: AsyncSession = Depends(get_db),
-    admin: User = Depends(require_admin),
-):
-    """Delete stream configuration (admin only)."""
+    _admin: User = Depends(require_admin),
+) -> dict[str, str]:
     result = await db.execute(select(StreamConfig).where(StreamConfig.stream_name == stream_name))
     config = result.scalar_one_or_none()
     if config is None:
         raise HTTPException(status_code=404, detail="Stream config not found")
-
     await db.delete(config)
     return {"message": "Stream config deleted"}
