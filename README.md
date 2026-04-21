@@ -77,16 +77,23 @@ cp .env.example .env
 docker compose up -d --build
 ```
 
-容器角色：
+容器角色（**默认使用宿主机外部 Nginx**）：
 
-| 容器 | 端口 | 说明 |
+| 容器 | 暴露端口 | 说明 |
 | --- | --- | --- |
-| `nginx` | 80 | 对外统一入口 |
-| `app` | 8000（内部） | FastAPI 后端 + SPA |
-| `srs` | 1935 / 1985 / 8080 / 8000 UDP / 10080 UDP | SRS 6 媒体服务器 |
+| `app` | `127.0.0.1:8000` | FastAPI + SPA，仅 loopback 暴露给宿主机 Nginx |
+| `srs` | `1935`(TCP), `127.0.0.1:1985`, `127.0.0.1:8080`, `8000/udp`, `10080/udp` | SRS 6 媒体服务器 |
 | `redis` | — | 状态缓存 |
 
-打开浏览器访问 <http://localhost> 即可。
+宿主机 Nginx 把 80/443 反代到上面的 loopback 端口。
+配置示例已经放在 [`deploy/nginx/external.conf.example`](deploy/nginx/external.conf.example)，
+按 README 顶部的备注复制到 `/etc/nginx/sites-available/` 即可。
+
+> **不想用外部 Nginx？** 取消 `docker-compose.yml` 中 `nginx:` 服务的注释，
+> 并把 `app` / `srs` 的 `127.0.0.1:xxxx:xxxx` 改回 `xxxx:xxxx`，
+> 内置 `deploy/nginx/nginx.conf` 即会作为单容器入口。
+
+打开浏览器访问 <https://your-domain> 即可。
 
 ### 3. 创建直播间
 

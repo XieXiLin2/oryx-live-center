@@ -1,11 +1,20 @@
 # -----------------------------------------------------------------------------
 # SRS Live Center (origin node)
 #
-# Topology:
+# Topology (默认：外部 Nginx 反代)
 #   - srs:        SRS 6 media server (RTMP/SRT/WebRTC/HTTP-FLV)
-#   - app:        FastAPI backend + static SPA (handles auth, rooms, hooks)
-#   - nginx:      Public front door. Routes / to app, /live/ + /rtc/ to SRS
-#   - redis:      Shared state / rate-limiting / session (optional).
+#   - app:        FastAPI backend + static SPA (auth、rooms、http_hooks)
+#   - redis:      共享状态 / rate-limit（可选）
+#
+# 反向代理：
+#   本项目默认使用 **宿主机上已有的外部 Nginx**（或其他反代）。
+#   `app` 将 HTTP 端口 8000 暴露到宿主机 127.0.0.1:8000，
+#   `srs` 将 HTTP-FLV 8080 / HTTP-API 1985 / RTMP 1935 / WebRTC 8000/udp / SRT 10080/udp
+#   暴露到宿主机。由外部 Nginx 把 80/443 反代到它们。
+#
+#   反代示例见 `deploy/nginx/nginx.conf`；或参阅 README「使用外部 Nginx」一节。
+#
+# 如果你想让 docker compose 也起一个内置 Nginx 容器，取消下方 `nginx:` 服务的注释即可。
 #
 # For an Edge node deployment see docs/srs-edge.md.
 # -----------------------------------------------------------------------------
@@ -15,8 +24,10 @@ services:
     build: .
     container_name: srs-live-center-app
     restart: unless-stopped
-    expose:
-      - "8000"
+    ports:
+      # 仅绑定 127.0.0.1，外部 Nginx 通过宿主机 loopback 反代过来。
+      # 如果外部 Nginx 在另一台机器，请改为 "8000:8000"。
+      - "127.0.0.1:8000:8000"
     volumes:
       - app-data:/app/data
     env_file:
@@ -37,28 +48,36 @@ services:
     restart: unless-stopped
     command: ["./objs/srs", "-c", "conf/srs.conf"]
     ports:
-      - "1935:1935"        # RTMP push
-      - "1985:1985"        # HTTP API (expose publicly only if you trust the LAN)
-      - "8080:8080"        # HTTP-FLV / HLS (nginx will proxy if desired)
-      - "8000:8000/udp"    # WebRTC UDP
-      - "10080:10080/udp"  # SRT UDP
+      - "1935:1935"               # RTMP 推流（外部推流者需可达）
+      - "127.0.0.1:1985:1985"     # SRS HTTP API（仅供本机反代使用，不要公开暴露）
+      - "127.0.0.1:8080:8080"     # HTTP-FLV / HLS（由外部 Nginx 反代到公网）
+      - "8000:8000/udp"           # WebRTC UDP（外部观众直连）
+      - "10080:10080/udp"         # SRT UDP
     volumes:
       - ./deploy/srs/srs.conf:/usr/local/srs/conf/srs.conf:ro
       - srs-data:/usr/local/srs/objs/nginx/html
     environment:
       - CANDIDATE=${CANDIDATE:-}
 
-  nginx:
-    image: nginx:1.27-alpine
-    container_name: srs-live-center-nginx
-    restart: unless-stopped
-    ports:
-      - "80:80"
-    volumes:
-      - ./deploy/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-    depends_on:
-      - app
-      - srs
+  # ---------------------------------------------------------------------------
+  # 内置 Nginx（默认禁用）
+  #
+  # 如果你所在环境没有现成的 Nginx，或想用一个干净的前端入口，取消下面整段
+  # 注释即可。同时把 app / srs 的端口绑定从 "127.0.0.1:xxxx:xxxx" 改回 "xxxx:xxxx"
+  # 以便让 nginx 容器通过 Docker network 访问它们（当前 nginx.conf 就是基于
+  # Docker 网络用服务名 app / srs 来访问，不需要把端口暴露到宿主机）。
+  # ---------------------------------------------------------------------------
+  # nginx:
+  #   image: nginx:1.27-alpine
+  #   container_name: srs-live-center-nginx
+  #   restart: unless-stopped
+  #   ports:
+  #     - "80:80"
+  #   volumes:
+  #     - ./deploy/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+  #   depends_on:
+  #     - app
+  #     - srs
 
   redis:
     image: redis:7-alpine
