@@ -21,7 +21,7 @@
 
 services:
   app:
-    image: ghcr.io/XieXiLin2/srs-live-center:latest
+    image: ghcr.io/xiexilin2/srs-live-center:latest
     container_name: srs-live-center-app
     restart: unless-stopped
     ports:
