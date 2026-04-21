@@ -40,6 +40,7 @@ export interface WsMessage {
   username?: string;
   display_name?: string;
   avatar_url?: string;
+  email?: string;
   content: string;
   created_at?: string;
   is_admin?: boolean;

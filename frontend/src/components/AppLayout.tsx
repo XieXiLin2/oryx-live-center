@@ -10,6 +10,7 @@ import { Avatar, Button, Dropdown, Layout, Menu, Space, theme, Typography } from
 import React from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../store/auth';
+import { resolveAvatar } from '../utils/avatar';
 
 const { Header, Content, Footer } = Layout;
 const { Text } = Typography;
@@ -77,8 +78,8 @@ const AppLayout: React.FC = () => {
             <Dropdown menu={{ items: userMenuItems, onClick: handleUserMenu }} placement="bottomRight">
               <Space style={{ cursor: 'pointer' }}>
                 <Avatar
-                  src={user.avatar_url || undefined}
-                  icon={!user.avatar_url ? <UserOutlined /> : undefined}
+                  src={resolveAvatar(user.avatar_url, user.email, { size: 64 })}
+                  icon={<UserOutlined />}
                   size="small"
                 />
                 <Text>{user.display_name || user.username}</Text>

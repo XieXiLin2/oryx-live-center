@@ -3,6 +3,7 @@ import { App, Avatar, Button, Input, Space, Switch, Table, Tag, Typography } fro
 import React, { useCallback, useEffect, useState } from 'react';
 import { adminApi } from '../../api';
 import type { User } from '../../types';
+import { resolveAvatar } from '../../utils/avatar';
 
 const { Title } = Typography;
 
@@ -74,7 +75,7 @@ const UsersManage: React.FC = () => {
             title: '用户',
             render: (_, u) => (
               <Space>
-                <Avatar src={u.avatar_url || undefined} size="small">
+                <Avatar src={resolveAvatar(u.avatar_url, u.email, { size: 48 })} size="small">
                   {(u.display_name || u.username)[0]}
                 </Avatar>
                 <span>{u.display_name || u.username}</span>

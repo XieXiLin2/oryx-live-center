@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { streamApi } from '../api';
 import { useAuth } from '../store/auth';
 import type { ChatRoomConfig, WsMessage } from '../types';
+import { resolveAvatar } from '../utils/avatar';
 
 const { Text } = Typography;
 
@@ -107,8 +108,8 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ streamName }) => {
       <div key={msg.id || index} style={{ padding: '4px 8px', borderRadius: 4 }}>
         <Space size={4} align="start">
           <Avatar
-            src={msg.avatar_url || undefined}
-            icon={!msg.avatar_url ? <UserOutlined /> : undefined}
+            src={resolveAvatar(msg.avatar_url, msg.email, { size: 40 })}
+            icon={<UserOutlined />}
             size={20}
           />
           <div>

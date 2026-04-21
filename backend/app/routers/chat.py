@@ -161,6 +161,7 @@ async def websocket_chat(
                         "username": user.username,
                         "display_name": user.display_name,
                         "avatar_url": user.avatar_url,
+                        "email": user.email,
                         "content": content,
                         "created_at": chat_msg.created_at.isoformat() if chat_msg.created_at else None,
                         "is_admin": user.is_admin,
