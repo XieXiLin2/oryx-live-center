@@ -58,6 +58,26 @@ services:
       - srs-data:/usr/local/srs/objs/nginx/html
     environment:
       - CANDIDATE=${CANDIDATE:-}
+    # -----------------------------------------------------------------------
+    # TCP keepalive — evict half-dead RTMP / HTTP-FLV clients within ~60s.
+    #
+    # SRS itself enables SO_KEEPALIVE on its listen sockets but relies on
+    # the kernel for the actual timing parameters. Docker containers
+    # inherit sysctls from the host by default; these overrides make the
+    # values explicit and container-local so that:
+    #
+    #   * idle=30s  — probe starts 30s after the last byte in either dir
+    #   * intvl=10s — retry every 10s
+    #   * probes=3  — 3 failures → socket dropped  →  SRS fires on_stop /
+    #                 on_unpublish, hook clears the matching session, the
+    #                 client disappears from the admin page.
+    #
+    # Effective detection = idle + intvl * probes ≈ 60s.
+    # -----------------------------------------------------------------------
+    sysctls:
+      net.ipv4.tcp_keepalive_time: 30
+      net.ipv4.tcp_keepalive_intvl: 10
+      net.ipv4.tcp_keepalive_probes: 3
 
   # ---------------------------------------------------------------------------
   # 内置 Nginx（默认禁用）
