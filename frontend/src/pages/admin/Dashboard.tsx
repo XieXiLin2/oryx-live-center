@@ -4,16 +4,40 @@ import { adminApi } from '../../api';
 
 const { Title } = Typography;
 
+type SrsSelf = {
+  cpu_percent?: number;
+  mem_percent?: number;
+  version?: string;
+};
+type SrsSummary = {
+  data?: { self?: SrsSelf; version?: string } & SrsSelf;
+  self?: SrsSelf;
+  version?: string;
+};
+
+interface SrsStreamRow {
+  id?: string;
+  name?: string;
+  app?: string;
+  clients?: number;
+  video?: { codec?: string } | null;
+  audio?: { codec?: string } | null;
+  publish?: { active?: boolean };
+}
+type SrsStreamListResponse = { streams?: SrsStreamRow[] };
+
 const Dashboard: React.FC = () => {
   const [loading, setLoading] = useState(true);
-  const [summary, setSummary] = useState<any>(null);
-  const [srsStreams, setSrsStreams] = useState<any[]>([]);
+  const [summary, setSummary] = useState<SrsSummary | null>(null);
+  const [srsStreams, setSrsStreams] = useState<SrsStreamRow[]>([]);
 
   const load = async () => {
     try {
       const [s, st] = await Promise.all([
-        adminApi.getSrsSummary().catch(() => null),
-        adminApi.getSrsStreams().catch(() => ({ streams: [] })),
+        adminApi.getSrsSummary().catch(() => null) as Promise<SrsSummary | null>,
+        adminApi.getSrsStreams().catch(() => ({ streams: [] })) as Promise<
+          SrsStreamListResponse | SrsStreamRow[]
+        >,
       ]);
       setSummary(s);
       setSrsStreams(Array.isArray(st) ? st : st?.streams ?? []);
@@ -30,34 +54,38 @@ const Dashboard: React.FC = () => {
 
   if (loading) return <Spin size="large" />;
 
-  const srs = summary?.data?.self ?? summary?.self ?? {};
+  const srs: SrsSelf = summary?.data?.self ?? summary?.self ?? {};
+  const version = summary?.data?.version ?? summary?.version ?? '—';
 
   return (
     <div>
       <Title level={3}>总览</Title>
       <Row gutter={16}>
         <Col span={6}>
-          <Card><Statistic title="CPU" value={srs?.cpu_percent ?? 0} suffix="%" precision={1} /></Card>
-        </Col>
-        <Col span={6}>
-          <Card><Statistic title="内存" value={(srs?.mem_percent ?? 0)} suffix="%" precision={1} /></Card>
-        </Col>
-        <Col span={6}>
-          <Card><Statistic title="在线流" value={srsStreams.length} /></Card>
+          <Card>
+            <Statistic title="CPU" value={srs.cpu_percent ?? 0} suffix="%" precision={1} />
+          </Card>
         </Col>
         <Col span={6}>
           <Card>
-            <Statistic
-              title="SRS 版本"
-              value={summary?.data?.version ?? summary?.version ?? '—'}
-            />
+            <Statistic title="内存" value={srs.mem_percent ?? 0} suffix="%" precision={1} />
+          </Card>
+        </Col>
+        <Col span={6}>
+          <Card>
+            <Statistic title="在线流" value={srsStreams.length} />
+          </Card>
+        </Col>
+        <Col span={6}>
+          <Card>
+            <Statistic title="SRS 版本" value={version} />
           </Card>
         </Col>
       </Row>
 
       <Card title="实时流列表" style={{ marginTop: 24 }}>
-        <Table
-          rowKey="id"
+        <Table<SrsStreamRow>
+          rowKey={(r) => r.id ?? `${r.app}/${r.name}`}
           size="small"
           dataSource={srsStreams}
           pagination={false}
@@ -68,17 +96,18 @@ const Dashboard: React.FC = () => {
             {
               title: '视频',
               dataIndex: 'video',
-              render: (v: any) => v?.codec ? <Tag>{v.codec}</Tag> : '—',
+              render: (v: SrsStreamRow['video']) => (v?.codec ? <Tag>{v.codec}</Tag> : '—'),
             },
             {
               title: '音频',
               dataIndex: 'audio',
-              render: (a: any) => a?.codec ? <Tag>{a.codec}</Tag> : '—',
+              render: (a: SrsStreamRow['audio']) => (a?.codec ? <Tag>{a.codec}</Tag> : '—'),
             },
             {
               title: '状态',
               dataIndex: 'publish',
-              render: (p: any) => p?.active ? <Tag color="green">直播中</Tag> : <Tag>离线</Tag>,
+              render: (p: SrsStreamRow['publish']) =>
+                p?.active ? <Tag color="green">直播中</Tag> : <Tag>离线</Tag>,
             },
           ]}
         />

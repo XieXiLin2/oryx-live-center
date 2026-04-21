@@ -1,6 +1,6 @@
 import { ReloadOutlined } from '@ant-design/icons';
 import { Button, Input, Space, Table, Tabs, Tag, Typography } from 'antd';
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { adminApi } from '../../api';
 import type { StreamPlaySessionItem, StreamPublishSessionItem } from '../../types';
 
@@ -19,7 +19,7 @@ const Sessions: React.FC = () => {
   const [pubs, setPubs] = useState<StreamPublishSessionItem[]>([]);
   const [loading, setLoading] = useState(false);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true);
     try {
       const [p, pb] = await Promise.all([
@@ -31,9 +31,11 @@ const Sessions: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [filter]);
 
-  useEffect(() => { load(); /* eslint-disable-next-line */ }, []);
+  useEffect(() => {
+    load();
+  }, [load]);
 
   return (
     <div>

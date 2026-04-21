@@ -1,19 +1,31 @@
 import { DisconnectOutlined, ReloadOutlined } from '@ant-design/icons';
-import { App, Button, Popconfirm, Space, Table, Tag, Typography } from 'antd';
+import { App, Button, Popconfirm, Table, Tag, Typography } from 'antd';
 import React, { useEffect, useState } from 'react';
 import { adminApi } from '../../api';
 
 const { Title } = Typography;
 
+interface SrsClientRow {
+  id: string;
+  type?: string;
+  vhost?: string;
+  app?: string;
+  stream?: string;
+  ip?: string;
+  alive?: number;
+  publish?: { active?: boolean };
+}
+type SrsClientListResponse = { clients?: SrsClientRow[] };
+
 const SrsClients: React.FC = () => {
   const { message } = App.useApp();
-  const [rows, setRows] = useState<any[]>([]);
+  const [rows, setRows] = useState<SrsClientRow[]>([]);
   const [loading, setLoading] = useState(false);
 
   const load = async () => {
     setLoading(true);
     try {
-      const data: any = await adminApi.getSrsClients();
+      const data = (await adminApi.getSrsClients()) as SrsClientListResponse | SrsClientRow[];
       const list = Array.isArray(data) ? data : data?.clients ?? [];
       setRows(list);
     } finally {
@@ -40,7 +52,7 @@ const SrsClients: React.FC = () => {
         <Button icon={<ReloadOutlined />} onClick={load}>刷新</Button>
       </div>
 
-      <Table
+      <Table<SrsClientRow>
         rowKey="id"
         loading={loading}
         dataSource={rows}
@@ -48,16 +60,27 @@ const SrsClients: React.FC = () => {
         pagination={{ pageSize: 50 }}
         columns={[
           { title: 'ID', dataIndex: 'id', width: 120 },
-          { title: '类型', dataIndex: 'type', render: (v) => <Tag>{v}</Tag> },
+          { title: '类型', dataIndex: 'type', render: (v?: string) => <Tag>{v ?? '—'}</Tag> },
           { title: '流', render: (_, r) => `${r.vhost || ''}/${r.app || ''}/${r.stream || ''}` },
           { title: 'IP', dataIndex: 'ip' },
-          { title: '协议', dataIndex: 'publish', render: (p: any) => p?.active ? <Tag color="green">推流</Tag> : <Tag color="blue">播放</Tag> },
-          { title: '时长', dataIndex: 'alive', render: (v: number) => v ? `${Math.floor(v)}s` : '—' },
+          {
+            title: '协议',
+            dataIndex: 'publish',
+            render: (p: SrsClientRow['publish']) =>
+              p?.active ? <Tag color="green">推流</Tag> : <Tag color="blue">播放</Tag>,
+          },
+          {
+            title: '时长',
+            dataIndex: 'alive',
+            render: (v?: number) => (v ? `${Math.floor(v)}s` : '—'),
+          },
           {
             title: '操作',
             render: (_, r) => (
               <Popconfirm title="断开该客户端?" onConfirm={() => kick(r.id)}>
-                <Button size="small" danger icon={<DisconnectOutlined />}>踢出</Button>
+                <Button size="small" danger icon={<DisconnectOutlined />}>
+                  踢出
+                </Button>
               </Popconfirm>
             ),
           },

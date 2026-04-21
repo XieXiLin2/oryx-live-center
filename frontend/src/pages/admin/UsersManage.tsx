@@ -1,6 +1,6 @@
 import { ReloadOutlined } from '@ant-design/icons';
 import { App, Avatar, Button, Input, Space, Switch, Table, Tag, Typography } from 'antd';
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { adminApi } from '../../api';
 import type { User } from '../../types';
 
@@ -16,7 +16,7 @@ const UsersManage: React.FC = () => {
 
   const PAGE_SIZE = 20;
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true);
     try {
       const data = await adminApi.listUsers({
@@ -29,9 +29,11 @@ const UsersManage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [page, search]);
 
-  useEffect(() => { load(); /* eslint-disable-next-line */ }, [page]);
+  useEffect(() => {
+    load();
+  }, [load]);
 
   const toggleBan = async (u: User, banned: boolean) => {
     await adminApi.banUser(u.id, banned);
