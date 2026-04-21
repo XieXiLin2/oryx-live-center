@@ -90,3 +90,47 @@ def stream_formats(stream_info: dict[str, Any]) -> list[str]:
     if stream_info.get("video"):
         formats.append("webrtc")
     return formats
+
+
+def stream_is_publishing(stream_info: dict[str, Any] | None) -> bool:
+    """Return True iff the given SRS stream entry has an active publisher.
+
+    SRS 6's ``/api/v1/streams/`` will return a row for a stream as soon as
+    *someone tries to pull it*, even if nobody is publishing yet (SRS
+    allocates the slot and waits). The presence of a row is therefore **not**
+    sufficient to determine "is someone broadcasting right now".
+
+    The authoritative field is ``publish.active`` (newer SRS) with fallbacks:
+
+    * ``publish.active`` — True while a publisher is connected.
+    * ``publishing``     — legacy top-level boolean on older builds.
+    * ``clients > 0`` as a last-resort heuristic is intentionally **NOT**
+      used; a viewer-only row also has ``clients >= 1``.
+
+    Also require at least one media track (``video`` or ``audio``) to be
+    present — a publisher that hasn't sent its first packet yet won't show
+    codec info, but that also means no one can actually play anything, so
+    calling the room "live" would be misleading.
+    """
+    if not stream_info:
+        return False
+
+    publish = stream_info.get("publish")
+    active = False
+    if isinstance(publish, dict):
+        active = bool(publish.get("active"))
+    elif isinstance(publish, bool):
+        active = publish
+    # Older SRS builds used a top-level "publishing" flag.
+    if not active:
+        active = bool(stream_info.get("publishing"))
+
+    if not active:
+        return False
+
+    # Require at least one media track so we don't report "live" for a
+    # publisher that connected but hasn't started sending media yet.
+    video = stream_info.get("video") or {}
+    audio = stream_info.get("audio") or {}
+    has_media = bool(video.get("codec") or audio.get("codec"))
+    return has_media

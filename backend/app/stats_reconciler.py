@@ -75,14 +75,18 @@ async def _reconcile_once(db: AsyncSession) -> None:
         logger.warning("Stats reconciler: SRS API unreachable: %s", e)
         return
 
-    # Map of stream_name → publisher info (if publishing).
+    # A stream is "publishing" **only** when SRS reports `publish.active` is
+    # true AND it has at least one media track — see
+    # ``srs_client.stream_is_publishing`` for the full rules. A naked row in
+    # ``/api/v1/streams/`` means nothing: SRS allocates one the moment any
+    # viewer tries to pull a stream, even if nobody is broadcasting. We must
+    # therefore NOT fall back to "every row is publishing" when the filter
+    # comes up empty — doing so turns a stray pull attempt into a false
+    # "live" signal for the entire room.
     publishing_streams: set[str] = {
         s.get("name", "") for s in srs_streams
-        if s.get("name") and s.get("publish", {}).get("active")
+        if s.get("name") and srs_client.stream_is_publishing(s)
     }
-    # If publish field missing, fall back to "stream is listed" = live.
-    if not publishing_streams:
-        publishing_streams = {s.get("name", "") for s in srs_streams if s.get("name")}
 
     # Set of all active SRS client IDs (both publishers & players).
     live_client_ids: set[str] = {str(c.get("id", "")) for c in srs_clients if c.get("id")}

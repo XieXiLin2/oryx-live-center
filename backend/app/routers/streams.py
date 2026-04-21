@@ -99,8 +99,18 @@ async def list_streams(
         if not settings.webrtc_play_enabled or not room_webrtc_ok:
             formats = [f for f in formats if f != "webrtc"]
 
-        # SRS-authoritative liveness; fall back to DB only when SRS is unreachable.
-        is_live = bool(live) if live_rows is not None else cfg.is_live
+        # SRS-authoritative liveness.
+        #
+        # IMPORTANT: simply having a row in `/api/v1/streams/` does NOT mean
+        # someone is publishing — SRS also creates a placeholder stream entry
+        # the moment a player tries to pull a non-existent stream. We must
+        # check the `publish.active` flag (or the `publishing` boolean on
+        # older SRS builds) to know if there's a real publisher behind it.
+        # Falls back to the DB column only when SRS is unreachable.
+        if live_rows is not None:
+            is_live = srs_client.stream_is_publishing(live)
+        else:
+            is_live = cfg.is_live
 
         # Our own viewer count (does NOT come from SRS).
         # If the stream went offline, force viewer_count to 0 to avoid ghost
@@ -226,8 +236,14 @@ async def get_stream_stats(
             peak_concurrent = current_viewers
 
     # Consult SRS only for the "is actually publishing right now" bit.
+    # See note in `list_streams` above — `publish.active` is the source of
+    # truth; mere presence of a stream row only means SRS allocated a slot
+    # (which it does on first pull attempt too).
     live_rows = await srs_client.list_streams()
-    is_live = any(r.get("name") == stream_name for r in live_rows)
+    is_live = any(
+        r.get("name") == stream_name and srs_client.stream_is_publishing(r)
+        for r in live_rows
+    )
 
     # Current session duration ("已开播时长"): how long the *current* broadcast
     # has been running. 0 when offline.
