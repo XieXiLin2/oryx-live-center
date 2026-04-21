@@ -42,13 +42,26 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import srs_client
 from app.database import async_session
-from app.models import StreamConfig, StreamPlaySession, StreamPublishSession
+from app.models import (
+    StreamConfig,
+    StreamPlaySession,
+    StreamPublishSession,
+    ViewerSession,
+)
 
 logger = logging.getLogger(__name__)
 
-# How often to reconcile. Short enough that "ghost viewer counts" only linger
-# briefly after hook loss, long enough not to hammer the SRS API.
+# How often to reconcile SRS-driven publish/play sessions. Short enough that
+# "ghost counts" only linger briefly after hook loss; long enough not to
+# hammer the SRS API.
 RECONCILE_INTERVAL_SECONDS = 30
+
+# How often to sweep viewer-websocket sessions for stale heartbeats.
+# Frontends ping every ~15s; anything older than HEARTBEAT_TIMEOUT is
+# considered dead and closed by the sweeper.
+VIEWER_SWEEP_INTERVAL_SECONDS = 10
+VIEWER_HEARTBEAT_TIMEOUT_SECONDS = 40
+
 
 
 async def _reconcile_once(db: AsyncSession) -> None:
@@ -142,10 +155,93 @@ async def _reconcile_once(db: AsyncSession) -> None:
 
     await db.flush()
 
+    # -------- 4. Reset in-memory peak for rooms that went offline --------
+    # Importing here avoids a circular import at module load time.
+    try:
+        from app.routers.viewer import manager as _viewer_manager
 
-async def reconciler_loop() -> None:
-    """Run the reconciler forever. Intended to be started as a lifespan task."""
-    # Small delay so startup isn't racy with the first hook.
+        for cfg in configs:
+            if not cfg.is_live:
+                _viewer_manager.reset_peak(cfg.stream_name)
+    except Exception:  # pragma: no cover — defensive
+        pass
+
+
+# ---------------------------------------------------------------------------
+# Viewer-WebSocket heartbeat sweeper
+# ---------------------------------------------------------------------------
+
+
+async def _sweep_viewer_sessions_once(db: AsyncSession) -> set[str]:
+    """Close ViewerSession rows whose heartbeat has gone stale.
+
+    Returns the set of stream names that had at least one session closed, so
+    the caller can broadcast fresh stats on those rooms.
+    """
+    now = dt.datetime.now(dt.timezone.utc)
+    cutoff = now - dt.timedelta(seconds=VIEWER_HEARTBEAT_TIMEOUT_SECONDS)
+
+    result = await db.execute(
+        select(ViewerSession)
+        .where(ViewerSession.ended_at.is_(None))
+        .where(ViewerSession.last_heartbeat_at < cutoff)
+    )
+
+    touched: set[str] = set()
+    for row in result.scalars().all():
+        row.ended_at = now
+        started = row.started_at
+        if started is not None and started.tzinfo is None:
+            started = started.replace(tzinfo=dt.timezone.utc)
+        if started is not None:
+            row.duration_seconds = max(0, int((now - started).total_seconds()))
+        touched.add(row.stream_name)
+        logger.info(
+            "Reconciler: swept stale viewer session key=%s stream=%s dur=%ss",
+            row.session_key, row.stream_name, row.duration_seconds,
+        )
+    await db.flush()
+    return touched
+
+
+async def _viewer_sweep_loop() -> None:
+    """Background task: periodically close zombie ViewerSession rows."""
+    await asyncio.sleep(5)  # stagger from main reconciler startup
+    while True:
+        touched: set[str] = set()
+        try:
+            async with async_session() as db:
+                try:
+                    touched = await _sweep_viewer_sessions_once(db)
+                    await db.commit()
+                except Exception as e:
+                    await db.rollback()
+                    logger.exception("Viewer sweeper error: %s", e)
+        except Exception as e:  # pragma: no cover — defensive
+            logger.exception("Viewer sweeper outer error: %s", e)
+
+        # Fan-out fresh stats for each affected room.
+        if touched:
+            try:
+                from app.routers.viewer import _broadcast_stats
+
+                for name in touched:
+                    try:
+                        await _broadcast_stats(name)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+
+        await asyncio.sleep(VIEWER_SWEEP_INTERVAL_SECONDS)
+
+
+# ---------------------------------------------------------------------------
+# Main loop — runs both reconcilers concurrently
+# ---------------------------------------------------------------------------
+
+
+async def _publish_play_loop() -> None:
     await asyncio.sleep(5)
     while True:
         try:
@@ -159,3 +255,11 @@ async def reconciler_loop() -> None:
         except Exception as e:  # pragma: no cover — defensive
             logger.exception("Reconciler outer error: %s", e)
         await asyncio.sleep(RECONCILE_INTERVAL_SECONDS)
+
+
+async def reconciler_loop() -> None:
+    """Run both reconcilers forever. Intended to be started as a lifespan task."""
+    await asyncio.gather(
+        _publish_play_loop(),
+        _viewer_sweep_loop(),
+    )

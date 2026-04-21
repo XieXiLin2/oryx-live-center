@@ -117,3 +117,41 @@ class StreamPublishSession(Base):
     started_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     ended_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     duration_seconds: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class ViewerSession(Base):
+    """A single **frontend**-driven viewer session.
+
+    Unlike :class:`StreamPlaySession` (which is populated from SRS hooks and
+    left untouched so it can evolve with the media layer), this table is fully
+    owned by the backend and written exclusively from the `/ws/viewer/...`
+    WebSocket lifecycle:
+
+    * Row is inserted when the WS connection is accepted.
+    * `last_heartbeat_at` is advanced on every client ping.
+    * Row is closed (`ended_at`, `duration_seconds`) when the WS disconnects
+      **or** when a background sweeper finds the heartbeat to be stale.
+
+    Because it doesn't depend on SRS `on_play` / `on_stop`, it works even when
+    those hooks are missed, reordered or intentionally disabled for a deploy.
+    """
+
+    __tablename__ = "viewer_sessions"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    # Opaque per-connection UUID minted by the backend on WS accept.
+    session_key: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    stream_name: Mapped[str] = mapped_column(String(255), index=True)
+    user_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    client_ip: Mapped[str] = mapped_column(String(64), default="")
+    user_agent: Mapped[str] = mapped_column(String(512), default="")
+    started_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    last_heartbeat_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    ended_at: Mapped[datetime.datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    duration_seconds: Mapped[int] = mapped_column(Integer, default=0)

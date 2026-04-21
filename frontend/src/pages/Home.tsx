@@ -22,7 +22,7 @@ import {
   Tag,
   Typography,
 } from 'antd';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { streamApi } from '../api';
 import ChatPanel from '../components/ChatPanel';
@@ -43,7 +43,7 @@ function formatDuration(totalSeconds: number): string {
 const { Title, Text } = Typography;
 
 const Home: React.FC = () => {
-  const { user, login } = useAuth();
+  const { user, token: authToken, login } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const [streams, setStreams] = useState<StreamInfo[]>([]);
   const [loading, setLoading] = useState(true);
@@ -54,8 +54,9 @@ const Home: React.FC = () => {
   const [watchToken, setWatchToken] = useState('');
   const [stats, setStats] = useState<StreamStats | null>(null);
   // Ticks every second so the "已开播时长" display smoothly advances between
-  // the 10-second stats polls, instead of jumping in big steps.
+  // server stats pushes, instead of jumping in big steps.
   const [nowTick, setNowTick] = useState(() => Date.now());
+  const viewerWsRef = useRef<WebSocket | null>(null);
 
   useEffect(() => {
     const id = setInterval(() => setNowTick(Date.now()), 1000);
@@ -86,28 +87,118 @@ const Home: React.FC = () => {
     return () => clearInterval(interval);
   }, [fetchStreams]);
 
-  // Poll per-stream statistics (backend-owned, not SRS) while a stream is active.
+  // Subscribe to per-stream statistics over a dedicated WebSocket.
+  //
+  // The backend owns playback analytics entirely (see routers/viewer.py): it
+  // increments/decrements current_viewers based on this very WS connection,
+  // sweeps zombie sessions via heartbeat timeouts, and pushes a fresh
+  // `{type:"stats", ...}` snapshot whenever counts change. The frontend does
+  // **not** poll `/stats` anymore.
   useEffect(() => {
     if (!selectedStream) {
       setStats(null);
+      // Close any previous viewer WS when leaving the room.
+      if (viewerWsRef.current) {
+        try {
+          viewerWsRef.current.close();
+        } catch {
+          /* ignore */
+        }
+        viewerWsRef.current = null;
+      }
       return;
     }
-    let cancelled = false;
-    const tick = async () => {
-      try {
-        const s = await streamApi.getStats(selectedStream.name);
-        if (!cancelled) setStats(s);
-      } catch {
-        // silently ignore — UI will just not update
+
+    const stream = selectedStream;
+    let closedByUs = false;
+    let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+
+    // Resolve the token the backend expects for room access:
+    //   * public room     — omit
+    //   * private + login — JWT (authToken)
+    //   * private + guest — watch token from URL (?token=...)
+    const resolveTokenForRoom = (): string => {
+      if (!stream.is_private) return '';
+      if (authToken) return authToken;
+      return searchParams.get('token') || '';
+    };
+
+    const connect = () => {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const tok = resolveTokenForRoom();
+      const qs = tok ? `?token=${encodeURIComponent(tok)}` : '';
+      const wsUrl = `${protocol}//${window.location.host}/api/viewer/ws/${stream.name}${qs}`;
+
+      const ws = new WebSocket(wsUrl);
+      viewerWsRef.current = ws;
+
+      ws.onmessage = (ev) => {
+        let msg: Record<string, unknown>;
+        try {
+          msg = JSON.parse(ev.data);
+        } catch {
+          return;
+        }
+        if (msg.type === 'stats') {
+          // Strip the `type` field; the rest matches the StreamStats shape.
+          const { type: _t, ...rest } = msg as unknown as StreamStats & { type: string };
+          void _t;
+          setStats(rest as StreamStats);
+        }
+      };
+
+      ws.onopen = () => {
+        // Clear any pending reconnect attempt.
+        if (reconnectTimer) {
+          clearTimeout(reconnectTimer);
+          reconnectTimer = null;
+        }
+        // Heartbeat every 15s so the backend keeps our ViewerSession alive.
+        if (heartbeatTimer) clearInterval(heartbeatTimer);
+        heartbeatTimer = setInterval(() => {
+          if (ws.readyState === WebSocket.OPEN) {
+            try {
+              ws.send(JSON.stringify({ type: 'ping' }));
+            } catch {
+              /* ignore */
+            }
+          }
+        }, 15000);
+      };
+
+      ws.onclose = () => {
+        if (heartbeatTimer) {
+          clearInterval(heartbeatTimer);
+          heartbeatTimer = null;
+        }
+        if (closedByUs) return;
+        // Try to reconnect after a short delay so stats keep flowing if the
+        // backend bounces or the network blips.
+        reconnectTimer = setTimeout(connect, 3000);
+      };
+
+      ws.onerror = () => {
+        // onclose will handle reconnect.
+      };
+    };
+
+    connect();
+
+    return () => {
+      closedByUs = true;
+      if (heartbeatTimer) clearInterval(heartbeatTimer);
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      if (viewerWsRef.current) {
+        try {
+          viewerWsRef.current.close();
+        } catch {
+          /* ignore */
+        }
+        viewerWsRef.current = null;
       }
     };
-    tick();
-    const id = setInterval(tick, 10000);
-    return () => {
-      cancelled = true;
-      clearInterval(id);
-    };
-  }, [selectedStream]);
+  }, [selectedStream, authToken, searchParams]);
 
   const handlePlay = useCallback(
     async (stream: StreamInfo, format: string, token?: string) => {

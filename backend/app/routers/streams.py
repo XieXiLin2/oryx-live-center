@@ -19,7 +19,7 @@ from app import srs_client
 from app.auth import get_current_user, require_admin
 from app.config import settings
 from app.database import get_db
-from app.models import StreamConfig, StreamPlaySession, StreamPublishSession, User
+from app.models import StreamConfig, StreamPublishSession, User, ViewerSession
 from app.schemas import (
     ChatRoomConfig,
     StreamConfigRequest,
@@ -75,12 +75,13 @@ async def list_streams(
     live_rows = await srs_client.list_streams()
     live_map = {row.get("name", ""): row for row in live_rows if row.get("name")}
 
-    # 3. Backend-owned viewer counts: count currently-open play sessions per
-    #    stream. This is the source of truth that the UI shows.
+    # 3. Backend-owned viewer counts: count currently-open viewer WS sessions
+    #    per stream. These sessions are maintained entirely by the backend
+    #    (see routers/viewer.py) and do NOT rely on SRS `on_play`/`on_stop`.
     viewer_q = await db.execute(
-        select(StreamPlaySession.stream_name, func.count(StreamPlaySession.id))
-        .where(StreamPlaySession.ended_at.is_(None))
-        .group_by(StreamPlaySession.stream_name)
+        select(ViewerSession.stream_name, func.count(ViewerSession.id))
+        .where(ViewerSession.ended_at.is_(None))
+        .group_by(ViewerSession.stream_name)
     )
     open_viewer_map: dict[str, int] = {name: cnt for name, cnt in viewer_q.all()}
 
@@ -138,40 +139,66 @@ async def get_stream_stats(
 ) -> dict:
     """Aggregate statistics for one stream, all computed by the backend.
 
-    We intentionally **do not** surface SRS's internal `clients` counter here.
-    SRS is still consulted for the boolean "is there an active publisher",
-    because that is something only the media server can know authoritatively.
+    Playback-side metrics (viewers / plays / watch time) come exclusively from
+    ``ViewerSession`` rows — i.e. from the WebSocket-driven viewer tracker
+    defined in :mod:`app.routers.viewer`. SRS `on_play` / `on_stop` are
+    **not** used as a source of truth here.
+
+    Publish-side metrics still come from ``StreamPublishSession`` (which is
+    populated via SRS publish hooks, the one thing only the media server can
+    authoritatively observe).
     """
     result = await db.execute(select(StreamConfig).where(StreamConfig.stream_name == stream_name))
     cfg = result.scalar_one_or_none()
     if cfg is None:
         raise HTTPException(status_code=404, detail="Stream not configured")
 
-    # Current viewers = open play sessions for this stream.
+    # Current viewers = open ViewerSession rows for this stream (WS-driven).
     current_q = await db.execute(
-        select(func.count(StreamPlaySession.id))
-        .where(StreamPlaySession.stream_name == stream_name)
-        .where(StreamPlaySession.ended_at.is_(None))
+        select(func.count(ViewerSession.id))
+        .where(ViewerSession.stream_name == stream_name)
+        .where(ViewerSession.ended_at.is_(None))
     )
     current_viewers: int = current_q.scalar() or 0
 
     # Lifetime totals.
     total_plays_q = await db.execute(
-        select(func.count(StreamPlaySession.id))
-        .where(StreamPlaySession.stream_name == stream_name)
+        select(func.count(ViewerSession.id))
+        .where(ViewerSession.stream_name == stream_name)
     )
     total_plays: int = total_plays_q.scalar() or 0
 
-    total_watch_q = await db.execute(
-        select(func.coalesce(func.sum(StreamPlaySession.duration_seconds), 0))
-        .where(StreamPlaySession.stream_name == stream_name)
+    # Closed sessions contribute their stored duration; open sessions are
+    # extrapolated to (now - started_at) so the total doesn't appear frozen
+    # while a viewer is still watching.
+    import datetime as _dt
+    now = _dt.datetime.now(_dt.timezone.utc)
+
+    closed_sum_q = await db.execute(
+        select(func.coalesce(func.sum(ViewerSession.duration_seconds), 0))
+        .where(ViewerSession.stream_name == stream_name)
+        .where(ViewerSession.ended_at.is_not(None))
     )
-    total_watch_seconds: int = int(total_watch_q.scalar() or 0)
+    closed_watch = int(closed_sum_q.scalar() or 0)
+
+    open_q = await db.execute(
+        select(ViewerSession.started_at)
+        .where(ViewerSession.stream_name == stream_name)
+        .where(ViewerSession.ended_at.is_(None))
+    )
+    live_watch = 0
+    for (started,) in open_q.all():
+        if started is None:
+            continue
+        if started.tzinfo is None:
+            started = started.replace(tzinfo=_dt.timezone.utc)
+        live_watch += max(0, int((now - started).total_seconds()))
+    total_watch_seconds: int = closed_watch + live_watch
 
     unique_viewers_q = await db.execute(
-        select(func.count(func.distinct(StreamPlaySession.user_id)))
-        .where(StreamPlaySession.stream_name == stream_name)
-        .where(StreamPlaySession.user_id.is_not(None))
+        select(func.count(func.distinct(ViewerSession.user_id)))
+        .where(ViewerSession.stream_name == stream_name)
+        .where(ViewerSession.user_id.is_not(None))
     )
     unique_logged_in_viewers: int = int(unique_viewers_q.scalar() or 0)
 
@@ -185,15 +212,18 @@ async def get_stream_stats(
     active_pub = pub_q.scalars().first()
 
     # Peak concurrent viewers in the current live session:
-    # count of play sessions whose started_at >= current publisher's started_at.
+    # - while live: max(in-memory WS peak, current_viewers)
+    # - when offline: 0 (reset by reconciler).
     peak_concurrent: int = 0
     if active_pub is not None:
-        peak_q = await db.execute(
-            select(func.count(StreamPlaySession.id))
-            .where(StreamPlaySession.stream_name == stream_name)
-            .where(StreamPlaySession.started_at >= active_pub.started_at)
-        )
-        peak_concurrent = int(peak_q.scalar() or 0)
+        try:
+            from app.routers.viewer import manager as _viewer_manager
+
+            peak_concurrent = max(
+                _viewer_manager.peak_viewers(stream_name), current_viewers
+            )
+        except Exception:
+            peak_concurrent = current_viewers
 
     # Consult SRS only for the "is actually publishing right now" bit.
     live_rows = await srs_client.list_streams()
@@ -201,10 +231,8 @@ async def get_stream_stats(
 
     # Current session duration ("已开播时长"): how long the *current* broadcast
     # has been running. 0 when offline.
-    import datetime as _dt
     current_live_duration_seconds = 0
     if active_pub is not None and active_pub.started_at is not None:
-        now = _dt.datetime.now(_dt.timezone.utc)
         # Normalize tz-naive SQLite rows (SQLite stores as naive UTC).
         started = active_pub.started_at
         if started.tzinfo is None:

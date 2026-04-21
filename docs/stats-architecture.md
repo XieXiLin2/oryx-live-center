@@ -1,22 +1,37 @@
 # 播放 & 直播统计架构
 
-> **设计原则**：**"播放数据" 由后端自己持久化与计算；"媒体层面的真相" 由 SRS
-> 回答。** 这样可以规避 SRS 重启 / 接口字段变动 / 回调偶尔丢失带来的数据漂移。
+> **设计原则**
+>
+> * **推流（publish）侧** 的"是否在播 / 编码 / 推流时长"——继续由 **SRS** 通过
+>   `on_publish` / `on_unpublish` hook 反馈。这是只有媒体服务器才能权威知晓的
+>   信息。
+> * **播放（play）侧** 的"当前观众 / 累计观看次数 / 总时长 / 峰值"——由 **后端
+>   完全自行维护**，**不再依赖** SRS 的 `on_play` / `on_stop`。前后端通过
+>   **WebSocket** 直连建立观众会话生命周期。
+>
+> 这样可以同时获得：
+> * 推流统计的真实性（SRS 直接告诉你有没有人在推）
+> * 播放统计的可控性（不会因为 SRS 重启 / 回调字段变化 / 中间链路丢包而漂移）
 
 ---
 
 ## 1. 责任划分（Who owns what）
 
-| 数据 | 负责方 | 原因 |
+| 数据 | 负责方 | 来源 |
 | --- | --- | --- |
-| **是否正在推流 (`is_live`)** | **SRS** | 只有媒体服务器知道 TCP/UDP 上有没有真的在推流 |
-| **视频 / 音频编码 (`video_codec`, `audio_codec`)** | **SRS** | 同上，需要解析 RTMP/WebRTC metadata |
-| **当前观众数 (`current_viewers`)** | **后端 (DB)** | 用 `on_play`/`on_stop` 开合 session，比 SRS 自身的 `clients` 更稳定 |
-| **累计观看次数 (`total_plays`)** | **后端 (DB)** | 按条插入 `stream_play_sessions`，计数即可 |
-| **总观看时长 (`total_watch_seconds`)** | **后端 (DB)** | 每个 session 的 `duration_seconds` 之和 |
-| **峰值并发观众 (`peak_session_viewers`)** | **后端 (DB)** | 当前直播区间内的 session 数聚合 |
-| **独立登录观众 (`unique_logged_in_viewers`)** | **后端 (DB)** | `COUNT(DISTINCT user_id)` |
-| **开播 / 下播时间 (`last_publish_at` / `last_unpublish_at`)** | **后端 (DB)** | `on_publish`/`on_unpublish` 写入 |
+| **是否正在推流 (`is_live`)** | **SRS** | `srs_client.list_streams()` |
+| **视频 / 音频编码 (`video_codec`, `audio_codec`)** | **SRS** | 同上 |
+| **当前推流时长 (`current_live_duration_seconds`)** | 后端 (DB) | `now - StreamPublishSession.started_at` |
+| **累计推流时长 (`total_live_seconds`)** | 后端 (DB) | `SUM(StreamPublishSession.duration_seconds)` + 当前 |
+| **当前观众数 (`current_viewers`)** | **后端 (WS)** | `ViewerSession` 中 `ended_at IS NULL` 的行数 |
+| **累计观看次数 (`total_plays`)** | **后端 (WS)** | `ViewerSession` 全量行数 |
+| **总观看时长 (`total_watch_seconds`)** | **后端 (WS)** | `SUM(ViewerSession.duration_seconds)` + 在线会话外推 |
+| **独立登录观众 (`unique_logged_in_viewers`)** | **后端 (WS)** | `COUNT(DISTINCT user_id)` |
+| **峰值并发观众 (`peak_session_viewers`)** | **后端 (WS, 内存)** | 当前直播区间内 WS 并发的最大值 |
+
+> 注：旧的 `StreamPlaySession` 表（由 SRS hook 写入）与 `on_play`/`on_stop`
+> hook **保持原样不动**，但**不再用于任何对外的播放统计聚合**。它仍然存在以便
+> 兼容历史数据 / 风控查询。
 
 ---
 
@@ -30,45 +45,43 @@
                                                   │    StreamConfig         │
                                                   └─────────────────────────┘
 
- ┌────────────┐    on_play  / on_stop            ┌─────────────────────────┐
- │  观众端     │ ────────────────────────────▶  │ POST /api/hooks/…       │
- │ (FLV/WHEP) │                                  │  → 写 StreamPlaySession │
+ ┌────────────┐                                  ┌─────────────────────────┐
+ │  观众端     │      WS /api/viewer/ws/{name}    │ routers/viewer.py       │
+ │ (浏览器)    │ ◀────────────────────────────▶ │  · accept → INSERT       │
+ │            │   ping(15s) / pong               │    ViewerSession         │
+ │            │   ←   {type:"stats", ...} ←─────│  · 每次 ping 更新心跳    │
+ │            │   onclose → 关闭 session         │  · broadcast 给同房间   │
  └────────────┘                                  └─────────────────────────┘
 
- ┌─────────────────────────────┐ 每 30 秒
- │ stats_reconciler            │ ──轮询──▶ SRS /api/v1/streams, /clients
- │ (后端后台任务)                │            ↓
- │                             │     · 关闭孤儿 publish session
- │                             │     · 关闭孤儿 play session
- │                             │     · 重新计算 viewer_count
- └─────────────────────────────┘
+ ┌─────────────────────────────────────────────┐
+ │ stats_reconciler                            │
+ │   _publish_play_loop      每 30s           │ ─→ 与 SRS 对账推流/旧 play
+ │   _viewer_sweep_loop      每 10s           │ ─→ 关闭 last_heartbeat
+ │                                              │     超过 40s 的 ViewerSession
+ └─────────────────────────────────────────────┘
 
  ┌─────────────────────────────┐
  │ 前端                         │
- │                             │
- │ · GET /api/streams/        │ 每 15s 轮询（列表）
- │ · GET /api/streams/{n}/stats│ 每 10s 轮询（当前房间）
- │                             │
+ │ · GET /api/streams/         │ 每 15s 轮询（房间列表）
+ │ · WS  /api/viewer/ws/{name} │ 进入房间时建立；不再轮询 /stats
+ │ · 服务器主动推送 stats       │
  └─────────────────────────────┘
 ```
 
 ---
 
-## 3. 轮询 vs WebSocket — 为什么选轮询
+## 3. 为什么播放侧选 WebSocket（而不再用 hook + 轮询）
 
-> **结论**：播放统计采用**后端定时 reconciler + 前端定时轮询**；聊天继续用
-> WebSocket。
-
-| 维度 | 轮询（10~15 秒） | WebSocket 推送 |
+| 维度 | 旧方案（SRS hook + 10s 轮询） | 新方案（后端 WS 心跳） |
 | --- | --- | --- |
-| 数据一致性 | 足够：数据已经最终一致 | 更快 |
-| 实现复杂度 | 低 | 需要消息总线 / 房间广播 |
-| 跨实例 | 天然支持 | 需要引入 Redis pub/sub |
-| 对 SRS 故障容忍 | 下一次轮询自动恢复 | 同理但更复杂 |
+| 数据来源 | `on_play`/`on_stop` 必须可达且不丢 | 后端自己看见的连接，**不依赖 SRS** |
+| 一致性恢复时间 | 轮询 + 30s 对账周期 | 心跳超时 40s（且事件即时广播） |
+| 实时反馈 | 客户端 10s 一次 GET | 服务端事件触发立即推送 |
+| 跨网关/反代干扰 | hook 路径必须暴露给 SRS | 仅一个 WS，跟着前端走，更稳 |
+| 客户端"掉电"误差 | hook 不发就一直挂着 | 心跳 40s 自动清扫 |
+| 实现成本 | 中（reconciler 兜底） | 中（只多一个 router + 一个 sweeper） |
 
-对于"当前观众数"、"总时长"这类统计数据，10~15 秒的延迟完全可接受；而这个数字
-被成百上千个客户端同时观看，用 WebSocket 推送反而会带来不必要的广播开销。聊天
-（实时性要求高、消息量小）则仍然保留 WebSocket。
+聊天、播放统计两条 WS 通道相互独立，互不影响。
 
 ---
 
@@ -76,34 +89,76 @@
 
 | 文件 | 作用 |
 | --- | --- |
-| `backend/app/routers/hooks.py` | 接收 SRS 的 4 个 HTTP 回调，写入 session 表 |
-| `backend/app/stats_reconciler.py` | 每 30s 与 SRS 对账，关闭孤儿 session，重算 `viewer_count` |
-| `backend/app/routers/streams.py` → `list_streams` | 列表接口，其中 `clients` 字段来自 DB，**不再来自 SRS** |
-| `backend/app/routers/streams.py` → `get_stream_stats` | `/api/streams/{name}/stats` 单流聚合接口 |
-| `frontend/src/pages/Home.tsx` | 每 10s 轮询 `/stats`，展示「当前观众 / 峰值 / 累计次数 / 总时长」 |
+| `backend/app/models.py` :: `ViewerSession` | 后端独占的观看会话表 |
+| `backend/app/routers/viewer.py` | **新增**：WS 端点 + `ViewerConnectionManager` + 心跳 + stats 计算 + 广播 |
+| `backend/app/stats_reconciler.py` :: `_viewer_sweep_loop` | 每 10s 扫描 `last_heartbeat_at < now-40s` 的会话，关闭并广播新 stats |
+| `backend/app/stats_reconciler.py` :: `_publish_play_loop` | 30s 一轮，沿用旧逻辑维护 SRS 推流真相和旧 `StreamPlaySession` 兼容关闭 |
+| `backend/app/routers/streams.py` :: `list_streams` | `clients` 字段改为聚合 `ViewerSession`（开放连接数） |
+| `backend/app/routers/streams.py` :: `get_stream_stats` | 播放侧字段全部改为基于 `ViewerSession`；推流侧仍来自 `StreamPublishSession` + SRS `is_live` |
+| `backend/app/routers/hooks.py` | **保持不动**：仍接收 SRS 的全部 4 个回调 |
+| `frontend/src/pages/Home.tsx` | 进入房间建立 `/api/viewer/ws/{name}`，15s 一次 ping；移除原 `/stats` 轮询 |
 
 ---
 
-## 5. 对账（Reconciler）细节
+## 5. WebSocket 协议
 
+### 5.1 鉴权
+
+WS URL：`/api/viewer/ws/{stream_name}?token=<可选>`
+
+| 房间类型 | `token` | 行为 |
+| --- | --- | --- |
+| 公开 | 无 | 允许匿名 |
+| 公开 | JWT | 解析出 `user_id` 一并入库 |
+| 私有 | JWT | 必须有效（与该用户身份对应） |
+| 私有 | watch_token | 必须等于 `StreamConfig.watch_token` |
+| 私有 | 都没有 | `close(code=4401)` |
+
+### 5.2 服务端 → 客户端
+
+```jsonc
+// 连接成功后立即下发
+{ "type": "hello", "session_key": "...", "heartbeat_interval_seconds": 15 }
+
+// 心跳响应
+{ "type": "pong" }
+
+// stats 快照（每当房间有人进出 / 心跳超时 / 推流变化时主动推送）
+{
+  "type": "stats",
+  "stream_name": "demo",
+  "display_name": "Demo Room",
+  "is_live": true,
+  "current_viewers": 12,
+  "total_plays": 3481,
+  "total_watch_seconds": 1289400,
+  "unique_logged_in_viewers": 420,
+  "peak_session_viewers": 37,
+  "current_live_duration_seconds": 1234,
+  "total_live_seconds": 56789,
+  "last_publish_at": "2026-04-21T05:10:22+00:00",
+  "last_unpublish_at": "2026-04-20T19:55:10+00:00",
+  "current_session_started_at": "2026-04-21T05:10:22+00:00"
+}
 ```
-每 30 秒：
-  A. 拉 SRS 现在有哪些 stream 正在 publish
-  B. 拉 SRS 现在有哪些 client_id 还活着
 
-  对每个未关闭的 StreamPublishSession：
-    若 A 中不包含该 stream 或其 client_id 已死 → 关闭，duration 按 now - started_at
+### 5.3 客户端 → 服务端
 
-  对每个未关闭的 StreamPlaySession：
-    若 stream 不再在 publish 列表 或 client_id 已死 → 关闭
-
-  对每个 StreamConfig：
-    is_live        = (stream_name ∈ 正在 publish 的集合)
-    viewer_count   = COUNT(open play sessions WHERE stream_name=...) 或 0
+```jsonc
+// 每 15 秒一次（前端定时器）
+{ "type": "ping" }
 ```
 
-> 注意：这里 **不会** 把 SRS 的 `clients` 直接赋给 `viewer_count`。那个数字包含
-> publish 本身，也可能在 SRS 短暂抖动时暴涨暴跌。我们只使用自己维护的 session 表。
+任何文本消息都会被当作心跳，更新 `last_heartbeat_at`。
+
+### 5.4 心跳与超时
+
+| 项 | 值 |
+| --- | --- |
+| 前端 ping 间隔 | **15 秒** |
+| 后端心跳超时 | **40 秒**（约 = 2× 间隔 + 容忍） |
+| Sweeper 扫描频率 | **10 秒** |
+| 自动重连 | 前端 `onclose` 后 3 秒后重新连接 |
 
 ---
 
@@ -111,17 +166,17 @@
 
 | 故障场景 | 行为 |
 | --- | --- |
-| `on_stop` 丢失（观众浏览器崩溃） | 最多 30s 后 reconciler 发现该 client_id 不在 SRS 了，关闭 session |
-| `on_unpublish` 丢失（主播网络断） | 最多 30s 后 reconciler 发现 stream 不在 publish 列表，关闭所有相关 session，并置 `is_live=false` |
-| SRS 重启 | 所有 SRS 里的 session 都没了；reconciler 一轮就能关掉所有孤儿并清 0 viewer_count |
-| 本后端重启 | session 在表里一直开着；重启后 reconciler 依旧正确关掉它们 |
-| 回调被攻击者伪造 | 设置 `SRS_HOOK_SECRET` 后，伪造的 hook 会被拒 |
+| 浏览器突然崩溃 | TCP 终结 → 后端 `WebSocketDisconnect` → 立即关闭 session 并广播 |
+| 用户拔网线 | TCP 半开 → 心跳超过 40s 未达 → sweeper 关闭 + 广播 |
+| 后端进程重启 | 重启后所有 `ended_at IS NULL` 的行将在第一轮 sweeper 中由"心跳过期"被批量关闭 |
+| SRS 重启 | 不影响播放统计（与 SRS 完全解耦）；推流侧靠 `_publish_play_loop` 与 SRS 对账恢复 |
+| 反向代理超时主动切断 WS | 前端 `onclose` 触发 3 秒后重连，新建 ViewerSession 行 |
 
 ---
 
 ## 7. 前端接口示例
 
-### 列表
+### 列表（仍是 REST）
 
 ```json
 GET /api/streams/
@@ -130,7 +185,7 @@ GET /api/streams/
     {
       "name": "demo",
       "display_name": "Demo Room",
-      "clients": 12,         // ← 来自后端 DB（StreamPlaySession 开箱计数）
+      "clients": 12,         // ← 来自 ViewerSession 开放计数
       "is_live": true,       // ← 来自 SRS
       "video_codec": "H264", // ← 来自 SRS
       "formats": ["flv", "webrtc"]
@@ -139,7 +194,7 @@ GET /api/streams/
 }
 ```
 
-### 单流聚合
+### 单流聚合（REST 仍可用，但前端在房间内已改为 WS 推送）
 
 ```json
 GET /api/streams/demo/stats
@@ -152,21 +207,25 @@ GET /api/streams/demo/stats
   "total_watch_seconds": 1289400,
   "unique_logged_in_viewers": 420,
   "peak_session_viewers": 37,
+  "current_live_duration_seconds": 1234,
+  "total_live_seconds": 56789,
   "last_publish_at": "2026-04-21T05:10:22+00:00",
   "last_unpublish_at": "2026-04-20T19:55:10+00:00",
   "current_session_started_at": "2026-04-21T05:10:22+00:00"
 }
 ```
 
+REST 与 WS 推送的字段完全一致（前者是同步快照，后者是事件驱动推送）。
+
 ---
 
 ## 8. 可扩展方向
 
-想要什么，都基于 `stream_play_sessions` 一张表就能算：
+所有指标都基于 `viewer_sessions` 一张表：
 
 * 每日 / 每周 DAU：`COUNT(DISTINCT user_id) GROUP BY date(started_at)`
-* 观看漏斗：按 `duration_seconds` 分桶统计
-* 地理分布：加 `client_ip` → GeoIP 聚合（表里已有 `client_ip` 字段）
+* 观看漏斗：按 `duration_seconds` 分桶
+* 地理分布：`client_ip` → GeoIP（已收集）
 * 用户总观看时长排行：`SUM(duration_seconds) GROUP BY user_id`
 
-这些都不需要再向 SRS 查询，**数据不会再因为 SRS 自身变化而抖动**。
+这些指标完全不需要再向 SRS 查询，也不会因 SRS 自身行为变化而抖动。
