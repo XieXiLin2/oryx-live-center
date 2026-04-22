@@ -12,6 +12,8 @@ interface LivePlayerProps {
   isLive: boolean;
   /** URL of placeholder content (image or video) to show when offline. */
   placeholderUrl?: string;
+  /** Whether chat/danmaku is enabled for this stream. */
+  chatEnabled?: boolean;
   style?: React.CSSProperties;
 }
 
@@ -56,7 +58,7 @@ async function playWebRTC(
   return pc;
 }
 
-const LivePlayer: React.FC<LivePlayerProps> = ({ url, format, isLive, placeholderUrl, style }) => {
+const LivePlayer: React.FC<LivePlayerProps> = ({ url, format, isLive, placeholderUrl, chatEnabled = true, style }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const artRef = useRef<Artplayer | null>(null);
   const mpegtsRef = useRef<ReturnType<typeof mpegts.createPlayer> | null>(null);
@@ -161,7 +163,7 @@ const LivePlayer: React.FC<LivePlayerProps> = ({ url, format, isLive, placeholde
         },
         plugins: [
           artplayerPluginDocumentPip({}),
-          artplayerPluginDanmuku({
+          ...(chatEnabled ? [artplayerPluginDanmuku({
             danmuku: [],
             speed: 5,
             opacity: 1,
@@ -173,7 +175,7 @@ const LivePlayer: React.FC<LivePlayerProps> = ({ url, format, isLive, placeholde
             synchronousPlayback: false,
             lockTime: 5,
             maxLength: 100,
-          }),
+          })] : []),
         ],
       };
 

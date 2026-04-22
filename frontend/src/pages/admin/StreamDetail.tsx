@@ -115,6 +115,7 @@ const StreamDetail: React.FC = () => {
         is_private: data.is_private,
         chat_enabled: data.chat_enabled,
         webrtc_play_enabled: data.webrtc_play_enabled,
+        offline_placeholder_url: data.offline_placeholder_url,
       });
     } catch (e: unknown) {
       const err = e as { response?: { status?: number } };
@@ -171,6 +172,7 @@ const StreamDetail: React.FC = () => {
         is_private: !!v.is_private,
         chat_enabled: !!v.chat_enabled,
         webrtc_play_enabled: !!v.webrtc_play_enabled,
+        offline_placeholder_url: v.offline_placeholder_url ?? '',
       });
       setCfg(updated);
       message.success('已保存');
@@ -323,6 +325,13 @@ const StreamDetail: React.FC = () => {
                     extra="关闭后本房间禁止 WHEP 拉流；WebRTC 推流 (WHIP) 不受影响。"
                   >
                     <Switch checkedChildren="允许" unCheckedChildren="禁止" />
+                  </Form.Item>
+                  <Form.Item
+                    name="offline_placeholder_url"
+                    label="离线占位内容 URL"
+                    extra="未开播时显示的图片、视频或音频 URL。留空则使用全局默认设置。支持 mp4/webm/ogg/mov 视频格式。"
+                  >
+                    <Input placeholder="https://example.com/offline.mp4" maxLength={1024} />
                   </Form.Item>
                   <Space>
                     <Button type="primary" icon={<SaveOutlined />} loading={saving} onClick={save}>

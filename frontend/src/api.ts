@@ -219,6 +219,7 @@ export interface BrandingPayload {
   site_name: string;
   logo_url: string;
   copyright: string;
+  offline_placeholder_url: string;
 }
 export const brandingApi = {
   get: () => api.get<BrandingPayload>('/branding').then((r) => r.data),

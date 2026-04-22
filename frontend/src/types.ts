@@ -85,6 +85,7 @@ export interface StreamConfig {
   watch_token: string;
   chat_enabled: boolean;
   webrtc_play_enabled: boolean;
+  offline_placeholder_url: string;
   is_live: boolean;
   viewer_count: number;
   total_play_count: number;

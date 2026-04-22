@@ -334,6 +334,7 @@ const LiveRoom: React.FC = () => {
               format={selectedFormat}
               isLive={stream.is_live}
               placeholderUrl={stream.offline_placeholder_url}
+              chatEnabled={stream.chat_enabled}
             />
 
             <div style={{ padding: '8px 16px' }}>

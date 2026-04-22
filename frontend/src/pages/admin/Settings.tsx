@@ -133,6 +133,16 @@ const Settings: React.FC = () => {
                 showCount
               />
             </Form.Item>
+            <Form.Item
+              label="全局离线占位内容 URL"
+              name="offline_placeholder_url"
+              extra="直播间未开播时显示的默认图片、视频或音频 URL。支持 mp4/webm/ogg/mov 视频格式，其他格式作为图片显示。各直播间可单独配置覆盖此全局设置。"
+            >
+              <Input
+                placeholder="https://example.com/offline.mp4"
+                maxLength={1024}
+              />
+            </Form.Item>
           </Form>
         )}
       </Card>
