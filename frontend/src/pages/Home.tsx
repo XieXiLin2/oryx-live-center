@@ -24,11 +24,45 @@ import {
 } from 'antd';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { streamApi } from '../api';
+import { edgeApi, streamApi } from '../api';
 import ChatPanel from '../components/ChatPanel';
 import LivePlayer from '../components/LivePlayer';
 import { useAuth } from '../store/auth';
-import type { StreamInfo, StreamPlayResponse, StreamStats } from '../types';
+import type { PlaybackSources, StreamInfo, StreamPlayResponse, StreamStats } from '../types';
+
+/**
+ * Rewrite the host portion of a play URL with the Edge node's base_url.
+ *
+ * The backend's `/api/streams/play` always returns URLs prefixed by
+ * ``public_base_url`` (or a relative path if that isn't configured). To switch
+ * playback to an Edge node we strip that prefix and splice in the node's
+ * ``base_url`` — preserving path + query (so the watch token survives).
+ *
+ * If the rewrite cannot be performed (e.g. original URL was relative), the
+ * original URL is returned unchanged.
+ */
+function applyEdgeRewrite(originalUrl: string, edgeBaseUrl: string): string {
+  if (!originalUrl) return originalUrl;
+  // Full absolute URL: `https://origin.example.com/live/demo.flv?token=x`
+  if (/^https?:\/\//i.test(originalUrl)) {
+    try {
+      const u = new URL(originalUrl);
+      const eb = new URL(edgeBaseUrl);
+      return `${eb.origin}${u.pathname}${u.search}${u.hash}`;
+    } catch {
+      return originalUrl;
+    }
+  }
+  // Relative URL (no origin configured server-side). Prefix with the edge.
+  try {
+    const eb = new URL(edgeBaseUrl);
+    const path = originalUrl.startsWith('/') ? originalUrl : `/${originalUrl}`;
+    return `${eb.origin}${path}`;
+  } catch {
+    return originalUrl;
+  }
+}
+
 
 function formatDuration(totalSeconds: number): string {
   if (!totalSeconds || totalSeconds < 0) return '0s';
@@ -57,6 +91,20 @@ const Home: React.FC = () => {
   // server stats pushes, instead of jumping in big steps.
   const [nowTick, setNowTick] = useState(() => Date.now());
   const viewerWsRef = useRef<WebSocket | null>(null);
+
+  // Playback sources (origin + edges) and the currently-selected one.
+  const [sources, setSources] = useState<PlaybackSources | null>(null);
+  const [selectedSource, setSelectedSource] = useState<string>('origin');
+
+  // Load the list of playback sources once. If it fails we silently fall back
+  // to "origin only" — the player still works against the origin.
+  useEffect(() => {
+    edgeApi
+      .listPlaybackSources()
+      .then(setSources)
+      .catch((e) => console.warn('failed to load playback sources', e));
+  }, []);
+
 
   useEffect(() => {
     const id = setInterval(() => setNowTick(Date.now()), 1000);
@@ -270,6 +318,28 @@ const Home: React.FC = () => {
   const publicStreams = useMemo(() => streams.filter((s) => !s.is_private), [streams]);
   const privateStreams = useMemo(() => streams.filter((s) => s.is_private), [streams]);
 
+  // Resolve the actual URL fed to <LivePlayer> after applying the Edge
+  // rewrite. When the user picks "origin" (or no sources are loaded yet),
+  // the original URL is used verbatim.
+  const resolvedPlayUrl = useMemo(() => {
+    if (!playData?.url) return '';
+    if (!sources || selectedSource === 'origin') return playData.url;
+    const edge = sources.edges.find((e) => e.slug === selectedSource);
+    if (!edge || !edge.base_url) return playData.url;
+    return applyEdgeRewrite(playData.url, edge.base_url);
+  }, [playData, sources, selectedSource]);
+
+  // Source-selector options. "Origin" is always present; enabled edges come
+  // from the backend in their configured order.
+  const sourceOptions = useMemo(() => {
+    const opts: { label: string; value: string }[] = [{ label: 'Origin', value: 'origin' }];
+    if (sources) {
+      sources.edges.forEach((e) => opts.push({ label: e.name, value: e.slug }));
+    }
+    return opts;
+  }, [sources]);
+
+
   const renderStreamCard = (stream: StreamInfo) => (
     <Col xs={24} sm={12} md={8} lg={6} key={stream.name}>
       <Card
@@ -330,6 +400,14 @@ const Home: React.FC = () => {
               }
               extra={
                 <Space>
+                  {sourceOptions.length > 1 && (
+                    <Select
+                      value={selectedSource}
+                      onChange={setSelectedSource}
+                      style={{ width: 160 }}
+                      options={sourceOptions}
+                    />
+                  )}
                   <Select
                     value={selectedFormat}
                     onChange={(fmt) => handlePlay(selectedStream, fmt, initialToken || undefined)}
@@ -350,7 +428,8 @@ const Home: React.FC = () => {
               }
               styles={{ body: { padding: 0 } }}
             >
-              <LivePlayer url={playData.url} format={selectedFormat} />
+              <LivePlayer url={resolvedPlayUrl || playData.url} format={selectedFormat} />
+
               <div style={{ padding: '8px 16px' }}>
                 <Space wrap>
                   <Text type="secondary">

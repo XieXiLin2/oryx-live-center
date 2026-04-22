@@ -18,7 +18,8 @@ import asyncio
 
 from app.config import settings
 from app.database import init_db
-from app.routers import admin, auth, chat, hooks, streams, viewer
+from app.routers import admin, auth, chat, edge, hooks, streams, viewer
+
 from app.stats_reconciler import reconciler_loop
 
 logging.basicConfig(
@@ -78,6 +79,9 @@ app.include_router(streams.router)
 app.include_router(admin.router)
 app.include_router(hooks.router)
 app.include_router(viewer.router)
+app.include_router(edge.router)
+app.include_router(edge.admin_router)
+
 
 
 @app.get("/api/health")

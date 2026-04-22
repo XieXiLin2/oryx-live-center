@@ -10,8 +10,11 @@ import Dashboard from './pages/admin/Dashboard';
 import Sessions from './pages/admin/Sessions';
 import Settings from './pages/admin/Settings';
 import SrsClients from './pages/admin/SrsClients';
+import EdgeManage from './pages/admin/EdgeManage';
+import StreamDetail from './pages/admin/StreamDetail';
 import StreamsManage from './pages/admin/StreamsManage';
 import UsersManage from './pages/admin/UsersManage';
+
 import { AuthProvider, useAuth } from './store/auth';
 
 const AppContent: React.FC = () => {
@@ -33,7 +36,10 @@ const AppContent: React.FC = () => {
         <Route path="admin" element={<AdminLayout />}>
           <Route index element={<Dashboard />} />
           <Route path="streams" element={<StreamsManage />} />
+          <Route path="streams/:name" element={<StreamDetail />} />
+          <Route path="edge-nodes" element={<EdgeManage />} />
           <Route path="sessions" element={<Sessions />} />
+
           <Route path="srs-clients" element={<SrsClients />} />
           <Route path="users" element={<UsersManage />} />
           <Route path="settings" element={<Settings />} />

@@ -54,6 +54,80 @@ def _build_whep_url(stream_name: str, token: str = "") -> str:
 
 
 # ---------------------------------------------------------------------------
+# Publish URL helpers.
+#
+# These are constructed from ``settings.publish_base_url`` (falling back to
+# ``public_base_url``) and are shown only in the admin streamer UI. They do
+# NOT affect how the media server routes traffic.
+# ---------------------------------------------------------------------------
+
+
+def _publish_host() -> str:
+    """Bare host (no scheme, no trailing slash) used in RTMP / SRT URLs."""
+    raw = (settings.publish_base_url or settings.public_base_url or "").strip()
+    if not raw:
+        return ""
+    # Strip scheme if present.
+    if "://" in raw:
+        raw = raw.split("://", 1)[1]
+    # Strip path if present.
+    raw = raw.split("/", 1)[0]
+    return raw.rstrip("/")
+
+
+def _publish_whip_base() -> str:
+    """WHIP uses HTTPS and returns ``scheme://host[:port]`` with no trailing slash."""
+    raw = (settings.publish_base_url or settings.public_base_url or "").strip()
+    if not raw:
+        return ""
+    if "://" not in raw:
+        raw = "https://" + raw
+    return raw.rstrip("/")
+
+
+def _build_publish_rtmp_url(stream_name: str, secret: str) -> Optional[str]:
+    host = _publish_host()
+    if not host:
+        return None
+    qs = f"?secret={secret}" if secret else ""
+    return f"rtmp://{host}:{settings.publish_rtmp_port}/{settings.srs_app}/{stream_name}{qs}"
+
+
+def _build_publish_srt_url(stream_name: str, secret: str) -> Optional[str]:
+    """SRT publish URL in SRS caller form.
+
+    SRS expects ``srt://host:port?streamid=#!::r=app/stream,m=publish,secret=xxx``
+    """
+    host = _publish_host()
+    if not host:
+        return None
+    streamid = f"#!::r={settings.srs_app}/{stream_name},m=publish"
+    if secret:
+        streamid += f",secret={secret}"
+    # urlencode would over-escape the ``#!``; manual encode of only commas / spaces.
+    from urllib.parse import quote
+    return f"srt://{host}:{settings.publish_srt_port}?streamid={quote(streamid, safe='=:,#!')}"
+
+
+def _build_publish_whip_url(stream_name: str, secret: str) -> Optional[str]:
+    base = _publish_whip_base()
+    if not base:
+        return None
+    params: dict[str, str] = {"app": settings.srs_app, "stream": stream_name}
+    if secret:
+        params["secret"] = secret
+    return f"{base}/rtc/v1/whip/?{urlencode(params)}"
+
+
+def _fill_publish_urls(resp: StreamConfigResponse, stream_name: str, secret: str) -> StreamConfigResponse:
+    resp.publish_rtmp_url = _build_publish_rtmp_url(stream_name, secret)
+    resp.publish_srt_url = _build_publish_srt_url(stream_name, secret)
+    resp.publish_whip_url = _build_publish_whip_url(stream_name, secret)
+    return resp
+
+
+
+# ---------------------------------------------------------------------------
 # Public listing
 # ---------------------------------------------------------------------------
 
@@ -396,11 +470,75 @@ async def list_stream_configs(
         item = StreamConfigResponse.model_validate(c)
         item.viewer_count = open_map.get(c.stream_name, 0)
         item.total_play_count = total_map.get(c.stream_name, item.total_play_count)
+        _fill_publish_urls(item, c.stream_name, c.publish_secret)
         out.append(item)
     return out
 
 
+@router.get("/config/{stream_name}", response_model=StreamConfigResponse)
+async def get_stream_config(
+    stream_name: str,
+    db: AsyncSession = Depends(get_db),
+    _admin: User = Depends(require_admin),
+) -> StreamConfigResponse:
+    """Return a single stream config row (admin only).
+
+    Used by the dedicated stream-detail page in the frontend so it can fetch
+    the full config independently from the listing endpoint.
+    """
+    result = await db.execute(
+        select(StreamConfig).where(StreamConfig.stream_name == stream_name)
+    )
+    config = result.scalar_one_or_none()
+    if config is None:
+        raise HTTPException(status_code=404, detail="Stream config not found")
+    item = StreamConfigResponse.model_validate(config)
+    return _fill_publish_urls(item, config.stream_name, config.publish_secret)
+
+
+@router.post("/config/{stream_name}", response_model=StreamConfigResponse, status_code=status.HTTP_201_CREATED)
+async def create_stream_config(
+    stream_name: str,
+    request: StreamConfigRequest,
+    db: AsyncSession = Depends(get_db),
+    _admin: User = Depends(require_admin),
+) -> StreamConfigResponse:
+    """Create a new stream config.
+
+    The simplified admin "new room" modal posts here with just display_name
+    and is_private; publish_secret / watch_token are auto-generated if not
+    supplied. Fails with 409 if the stream already exists so the caller can
+    switch to an update flow.
+    """
+    result = await db.execute(
+        select(StreamConfig).where(StreamConfig.stream_name == stream_name)
+    )
+    if result.scalar_one_or_none() is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Stream already exists",
+        )
+
+    config = StreamConfig(
+        stream_name=stream_name,
+        display_name=request.display_name or stream_name,
+        is_private=bool(request.is_private) if request.is_private is not None else False,
+        publish_secret=request.publish_secret or secrets.token_urlsafe(16),
+        watch_token=request.watch_token or secrets.token_urlsafe(24),
+        chat_enabled=request.chat_enabled if request.chat_enabled is not None else True,
+        webrtc_play_enabled=(
+            request.webrtc_play_enabled if request.webrtc_play_enabled is not None else True
+        ),
+    )
+    db.add(config)
+    await db.flush()
+    await db.refresh(config)
+    item = StreamConfigResponse.model_validate(config)
+    return _fill_publish_urls(item, config.stream_name, config.publish_secret)
+
+
 @router.put("/config/{stream_name}", response_model=StreamConfigResponse)
+
 async def update_stream_config(
     stream_name: str,
     request: StreamConfigRequest,
@@ -432,7 +570,8 @@ async def update_stream_config(
 
     await db.flush()
     await db.refresh(config)
-    return StreamConfigResponse.model_validate(config)
+    item = StreamConfigResponse.model_validate(config)
+    return _fill_publish_urls(item, config.stream_name, config.publish_secret)
 
 
 @router.post("/config/{stream_name}/rotate-publish-secret", response_model=StreamConfigResponse)
@@ -448,7 +587,8 @@ async def rotate_publish_secret(
     config.publish_secret = secrets.token_urlsafe(16)
     await db.flush()
     await db.refresh(config)
-    return StreamConfigResponse.model_validate(config)
+    item = StreamConfigResponse.model_validate(config)
+    return _fill_publish_urls(item, config.stream_name, config.publish_secret)
 
 
 @router.post("/config/{stream_name}/rotate-watch-token", response_model=StreamConfigResponse)
@@ -464,7 +604,9 @@ async def rotate_watch_token(
     config.watch_token = secrets.token_urlsafe(24)
     await db.flush()
     await db.refresh(config)
-    return StreamConfigResponse.model_validate(config)
+    item = StreamConfigResponse.model_validate(config)
+    return _fill_publish_urls(item, config.stream_name, config.publish_secret)
+
 
 
 @router.delete("/config/{stream_name}")

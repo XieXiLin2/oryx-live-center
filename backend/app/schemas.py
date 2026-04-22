@@ -138,7 +138,65 @@ class StreamConfigResponse(BaseModel):
     created_at: datetime.datetime
     updated_at: datetime.datetime
 
+    # Publish URLs (computed, not stored). Populated by the router using
+    # ``settings.publish_base_url`` (falling back to ``public_base_url``).
+    # ``None`` when no publish base URL is configured.
+    publish_rtmp_url: Optional[str] = None
+    publish_srt_url: Optional[str] = None
+    publish_whip_url: Optional[str] = None
+
     model_config = {"from_attributes": True}
+
+
+# ---- Edge nodes ----
+class EdgeNodeCreateRequest(BaseModel):
+    slug: str
+    name: str
+    base_url: str
+    description: str = ""
+    enabled: bool = True
+    sort_order: int = 0
+
+
+class EdgeNodeUpdateRequest(BaseModel):
+    name: Optional[str] = None
+    base_url: Optional[str] = None
+    description: Optional[str] = None
+    enabled: Optional[bool] = None
+    sort_order: Optional[int] = None
+
+
+class EdgeNodeResponse(BaseModel):
+    id: int
+    slug: str
+    name: str
+    base_url: str
+    description: str
+    enabled: bool
+    sort_order: int
+    created_at: datetime.datetime
+    updated_at: datetime.datetime
+
+    model_config = {"from_attributes": True}
+
+
+class EdgeNodePublicResponse(BaseModel):
+    """Subset of EdgeNode exposed to end viewers (no timestamps)."""
+
+    slug: str
+    name: str
+    base_url: str
+    description: str
+
+    model_config = {"from_attributes": True}
+
+
+class PlaybackSourcesResponse(BaseModel):
+    """Everything the player needs to render the source dropdown."""
+
+    origin: EdgeNodePublicResponse
+    edges: list[EdgeNodePublicResponse] = []
+
 
 
 # ---- Stream Play / Publish Statistics ----

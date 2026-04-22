@@ -3,6 +3,8 @@ import type {
   AuthURLResponse,
   ChatHistoryResponse,
   ChatRoomConfig,
+  EdgeNode,
+  PlaybackSources,
   StreamConfig,
   StreamInfo,
   StreamPlayResponse,
@@ -15,6 +17,7 @@ import type {
   ViewerSessionListResponse,
   ViewerSessionsQuery,
 } from './types';
+
 
 const api = axios.create({
   baseURL: '/api',
@@ -64,6 +67,12 @@ export const streamApi = {
 
   // --- Admin ---
   listConfigs: () => api.get<StreamConfig[]>('/streams/config').then((r) => r.data),
+  getConfig: (stream_name: string) =>
+    api.get<StreamConfig>(`/streams/config/${stream_name}`).then((r) => r.data),
+  createConfig: (
+    stream_name: string,
+    data: Partial<Omit<StreamConfig, 'id' | 'created_at' | 'updated_at'>>,
+  ) => api.post<StreamConfig>(`/streams/config/${stream_name}`, data).then((r) => r.data),
   updateConfig: (
     stream_name: string,
     data: Partial<Omit<StreamConfig, 'id' | 'created_at' | 'updated_at'>>
@@ -78,6 +87,36 @@ export const streamApi = {
       .then((r) => r.data),
   deleteConfig: (stream_name: string) => api.delete(`/streams/config/${stream_name}`),
 };
+
+// ---- Edge nodes ----
+export const edgeApi = {
+  /** Public endpoint — any viewer can fetch the available playback sources. */
+  listPlaybackSources: () =>
+    api.get<PlaybackSources>('/playback-sources').then((r) => r.data),
+
+  // Admin CRUD
+  listNodes: () => api.get<EdgeNode[]>('/admin/edge-nodes').then((r) => r.data),
+  createNode: (data: {
+    slug: string;
+    name: string;
+    base_url: string;
+    description?: string;
+    enabled?: boolean;
+    sort_order?: number;
+  }) => api.post<EdgeNode>('/admin/edge-nodes', data).then((r) => r.data),
+  updateNode: (
+    id: number,
+    data: Partial<{
+      name: string;
+      base_url: string;
+      description: string;
+      enabled: boolean;
+      sort_order: number;
+    }>,
+  ) => api.put<EdgeNode>(`/admin/edge-nodes/${id}`, data).then((r) => r.data),
+  deleteNode: (id: number) => api.delete(`/admin/edge-nodes/${id}`),
+};
+
 
 // ---- Chat ----
 export const chatApi = {

@@ -1,5 +1,6 @@
 import {
   AppstoreOutlined,
+  CloudServerOutlined,
   DashboardOutlined,
   PlayCircleOutlined,
   SettingOutlined,
@@ -16,11 +17,29 @@ const { Sider, Content } = Layout;
 const items = [
   { key: '/admin',              icon: <DashboardOutlined />,   label: '总览' },
   { key: '/admin/streams',      icon: <VideoCameraOutlined />, label: '直播间管理' },
+  { key: '/admin/edge-nodes',   icon: <CloudServerOutlined />, label: 'Edge 节点' },
   { key: '/admin/sessions',     icon: <PlayCircleOutlined />,  label: '播放统计' },
   { key: '/admin/srs-clients',  icon: <AppstoreOutlined />,    label: 'SRS 客户端' },
   { key: '/admin/users',        icon: <TeamOutlined />,        label: '用户管理' },
   { key: '/admin/settings',     icon: <SettingOutlined />,     label: '系统设置' },
 ];
+
+/**
+ * Pick the best-matching top-level menu key for the current URL so that the
+ * sidebar still highlights "直播间管理" when we are on
+ * ``/admin/streams/:name`` (detail page).
+ */
+const resolveSelectedKey = (pathname: string): string => {
+  // Longest prefix wins. Exclude the bare "/admin" key from the prefix match
+  // so every sub-route doesn't activate it.
+  const keys = items.map((i) => i.key).filter((k) => k !== '/admin');
+  const match = keys
+    .filter((k) => pathname === k || pathname.startsWith(k + '/'))
+    .sort((a, b) => b.length - a.length)[0];
+  if (match) return match;
+  if (pathname === '/admin' || pathname === '/admin/') return '/admin';
+  return '/admin';
+};
 
 const AdminLayout: React.FC = () => {
   const { user } = useAuth();
@@ -37,7 +56,7 @@ const AdminLayout: React.FC = () => {
       <Sider width={220} style={{ background: '#fff', borderRadius: 8 }}>
         <Menu
           mode="inline"
-          selectedKeys={[location.pathname]}
+          selectedKeys={[resolveSelectedKey(location.pathname)]}
           items={items}
           onClick={({ key }) => navigate(key)}
           style={{ border: 'none', borderRadius: 8, paddingTop: 16 }}

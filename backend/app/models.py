@@ -155,3 +155,38 @@ class ViewerSession(Base):
         DateTime(timezone=True), nullable=True
     )
     duration_seconds: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class EdgeNode(Base):
+    """A CDN / SRS-Edge node the end user can pick as a playback source.
+
+    The backend never proxies traffic through these; it only advertises them
+    to the player so the client can rewrite the FLV / WHEP host when the
+    viewer changes the "source" dropdown. The Origin itself (``public_base_url``)
+    is always implicitly available as the "Origin" source and is not stored
+    here.
+    """
+
+    __tablename__ = "edge_nodes"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    # Short machine-readable identifier (unique). Used as the ``source`` query
+    # value in play URLs so sessions can be attributed to a node.
+    slug: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    # Human-readable name shown in the source dropdown.
+    name: Mapped[str] = mapped_column(String(128))
+    # Scheme + host [+ port] that should replace ``public_base_url`` in play
+    # URLs. Example: ``https://edge-hk.example.com``. Path must NOT be
+    # included; the player keeps the original path + query intact.
+    base_url: Mapped[str] = mapped_column(String(512))
+    description: Mapped[str] = mapped_column(String(512), default="")
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Sort order (ascending). Ties broken by id.
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+

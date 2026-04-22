@@ -91,7 +91,39 @@ export interface StreamConfig {
   last_unpublish_at: string | null;
   created_at: string;
   updated_at: string;
+  /** Computed RTMP publish URL (derived from settings.publish_base_url). */
+  publish_rtmp_url: string | null;
+  /** Computed SRT publish URL. */
+  publish_srt_url: string | null;
+  /** Computed WHIP publish URL. */
+  publish_whip_url: string | null;
 }
+
+// ---- Edge nodes ----
+export interface EdgeNode {
+  id: number;
+  slug: string;
+  name: string;
+  base_url: string;
+  description: string;
+  enabled: boolean;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface EdgeNodePublic {
+  slug: string;
+  name: string;
+  base_url: string;
+  description: string;
+}
+
+export interface PlaybackSources {
+  origin: EdgeNodePublic;
+  edges: EdgeNodePublic[];
+}
+
 
 // ---- Admin ----
 export interface UserListResponse {

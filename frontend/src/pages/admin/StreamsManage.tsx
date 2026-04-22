@@ -1,4 +1,19 @@
-import { CopyOutlined, DeleteOutlined, EditOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons';
+/**
+ * Streams management (list view).
+ *
+ * Kept deliberately minimal: the list only shows stream name, display name,
+ * visibility, live state and a tiny action bar (open detail / delete). All
+ * the actual knobs (publish secret, watch token, WebRTC toggle, push URL
+ * templates, OBS / ffmpeg tutorials, low-latency tweaks) live on the
+ * per-stream detail page at ``/admin/streams/:name``.
+ *
+ * The "new room" modal is equally minimal — admins only pick the stream
+ * name, display name and whether the room is private. Publish secret and
+ * watch token are auto-generated server-side; the admin can inspect and
+ * rotate them from the detail page.
+ */
+
+import { DeleteOutlined, PlusOutlined, ReloadOutlined, SettingOutlined } from '@ant-design/icons';
 import {
   App,
   Button,
@@ -10,24 +25,21 @@ import {
   Switch,
   Table,
   Tag,
-  Tooltip,
   Typography,
 } from 'antd';
 import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { streamApi } from '../../api';
 import type { StreamConfig } from '../../types';
 
-const { Title, Text } = Typography;
-
-const copy = async (v: string) => {
-  try { await navigator.clipboard.writeText(v); } catch { /* ignore */ }
-};
+const { Title } = Typography;
 
 const StreamsManage: React.FC = () => {
   const { message } = App.useApp();
+  const navigate = useNavigate();
   const [rows, setRows] = useState<StreamConfig[]>([]);
   const [loading, setLoading] = useState(false);
-  const [modal, setModal] = useState<{ open: boolean; row?: StreamConfig | null }>({ open: false });
+  const [newModalOpen, setNewModalOpen] = useState(false);
   const [form] = Form.useForm();
 
   const load = async () => {
@@ -40,33 +52,38 @@ const StreamsManage: React.FC = () => {
     }
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+  }, []);
 
-  const openEdit = (row?: StreamConfig) => {
+  const openNew = () => {
     form.resetFields();
-    if (row) {
-      form.setFieldsValue(row);
-    } else {
-      form.setFieldsValue({ is_private: false, chat_enabled: true, webrtc_play_enabled: true });
-    }
-    setModal({ open: true, row });
+    form.setFieldsValue({ is_private: false });
+    setNewModalOpen(true);
   };
 
-  const submit = async () => {
+  const submitNew = async () => {
     const v = await form.validateFields();
-    const stream_name = v.stream_name?.trim();
-    if (!stream_name) return;
-    await streamApi.updateConfig(stream_name, {
-      display_name: v.display_name ?? '',
-      is_private: !!v.is_private,
-      chat_enabled: !!v.chat_enabled,
-      webrtc_play_enabled: !!v.webrtc_play_enabled,
-      publish_secret: v.publish_secret || undefined,
-      watch_token: v.watch_token || undefined,
-    });
-    message.success('保存成功');
-    setModal({ open: false });
-    load();
+    const streamName = v.stream_name?.trim();
+    if (!streamName) return;
+    try {
+      await streamApi.createConfig(streamName, {
+        display_name: v.display_name || streamName,
+        is_private: !!v.is_private,
+      });
+      message.success('直播间已创建');
+      setNewModalOpen(false);
+      // Jump straight into the detail page so the admin can copy
+      // the push key / watch token right away.
+      navigate(`/admin/streams/${encodeURIComponent(streamName)}`);
+    } catch (e: unknown) {
+      const err = e as { response?: { status?: number; data?: { detail?: string } } };
+      if (err.response?.status === 409) {
+        message.error('该流名已存在');
+      } else {
+        message.error(err.response?.data?.detail || '创建失败');
+      }
+    }
   };
 
   const del = async (name: string) => {
@@ -75,25 +92,19 @@ const StreamsManage: React.FC = () => {
     load();
   };
 
-  const rotateSecret = async (name: string) => {
-    await streamApi.rotatePublishSecret(name);
-    message.success('推流密钥已轮换');
-    load();
-  };
-
-  const rotateToken = async (name: string) => {
-    await streamApi.rotateWatchToken(name);
-    message.success('观看 Token 已轮换');
-    load();
-  };
-
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
-        <Title level={3} style={{ margin: 0 }}>直播间管理</Title>
+        <Title level={3} style={{ margin: 0 }}>
+          直播间管理
+        </Title>
         <Space>
-          <Button icon={<ReloadOutlined />} onClick={load}>刷新</Button>
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => openEdit()}>新建直播间</Button>
+          <Button icon={<ReloadOutlined />} onClick={load}>
+            刷新
+          </Button>
+          <Button type="primary" icon={<PlusOutlined />} onClick={openNew}>
+            新建直播间
+          </Button>
         </Space>
       </div>
 
@@ -103,76 +114,52 @@ const StreamsManage: React.FC = () => {
         dataSource={rows}
         pagination={{ pageSize: 20 }}
         columns={[
-          { title: '流名', dataIndex: 'stream_name' },
-          { title: '显示名', dataIndex: 'display_name' },
+          {
+            title: '流名',
+            dataIndex: 'stream_name',
+            render: (name: string) => <code>{name}</code>,
+          },
+          {
+            title: '显示名',
+            dataIndex: 'display_name',
+            render: (v: string, r) => v || r.stream_name,
+          },
           {
             title: '可见性',
             dataIndex: 'is_private',
-            render: (v: boolean) => v ? <Tag color="purple">私有</Tag> : <Tag color="blue">公开</Tag>,
+            width: 110,
+            render: (v: boolean) =>
+              v ? <Tag color="purple">私有</Tag> : <Tag color="blue">公开</Tag>,
           },
           {
             title: '状态',
             dataIndex: 'is_live',
-            render: (v: boolean) => v ? <Tag color="green">直播中</Tag> : <Tag>离线</Tag>,
-          },
-          { title: '当前观众', dataIndex: 'viewer_count' },
-          { title: '累计观看', dataIndex: 'total_play_count' },
-          {
-            title: '聊天',
-            dataIndex: 'chat_enabled',
-            render: (v: boolean) => v ? <Tag color="green">开</Tag> : <Tag color="red">关</Tag>,
-          },
-          {
-            title: 'WebRTC 播放',
-            dataIndex: 'webrtc_play_enabled',
-            render: (v: boolean) => v ? <Tag color="green">允许</Tag> : <Tag color="red">禁止</Tag>,
-          },
-          {
-            title: '密钥',
-            render: (_, r) => (
-              // Public rooms don't consume `watch_token` for playback, so we
-              // omit it to reduce clutter. The value is still stored server-
-              // side so it can be reused immediately if the room is later
-              // flipped to private.
-              <Space direction="vertical" size={2}>
-                <Text copyable={{ text: r.publish_secret }} style={{ fontSize: 12 }}>
-                  推流: <code>{r.publish_secret?.slice(0, 8)}…</code>
-                </Text>
-                {r.is_private && (
-                  <Text copyable={{ text: r.watch_token }} style={{ fontSize: 12 }}>
-                    Token: <code>{r.watch_token?.slice(0, 8)}…</code>
-                  </Text>
-                )}
-              </Space>
-            ),
+            width: 110,
+            render: (v: boolean) =>
+              v ? <Tag color="green">直播中</Tag> : <Tag>离线</Tag>,
           },
           {
             title: '操作',
+            width: 220,
             render: (_, r) => (
               <Space>
-                <Tooltip title="复制 RTMP 推流地址">
-                  <Button
-                    size="small"
-                    icon={<CopyOutlined />}
-                    onClick={() => {
-                      const host = window.location.hostname;
-                      copy(`rtmp://${host}/live/${r.stream_name}?secret=${r.publish_secret}`);
-                      message.success('已复制 RTMP 推流地址');
-                    }}
-                  />
-                </Tooltip>
-                <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(r)} />
-                <Popconfirm title="轮换推流密钥?" onConfirm={() => rotateSecret(r.stream_name)}>
-                  <Button size="small">换推流密钥</Button>
-                </Popconfirm>
-                {/* 观看 Token 仅对私有房间有意义，公开房间不展示以免误导。 */}
-                {r.is_private && (
-                  <Popconfirm title="轮换观看 Token?" onConfirm={() => rotateToken(r.stream_name)}>
-                    <Button size="small">换 Token</Button>
-                  </Popconfirm>
-                )}
-                <Popconfirm title="删除此直播间?" onConfirm={() => del(r.stream_name)}>
-                  <Button size="small" danger icon={<DeleteOutlined />} />
+                <Button
+                  size="small"
+                  icon={<SettingOutlined />}
+                  onClick={() =>
+                    navigate(`/admin/streams/${encodeURIComponent(r.stream_name)}`)
+                  }
+                >
+                  查看配置
+                </Button>
+                <Popconfirm
+                  title="删除此直播间?"
+                  description="将会同时失效推流密钥与观看 Token。"
+                  onConfirm={() => del(r.stream_name)}
+                >
+                  <Button size="small" danger icon={<DeleteOutlined />}>
+                    删除
+                  </Button>
                 </Popconfirm>
               </Space>
             ),
@@ -181,56 +168,40 @@ const StreamsManage: React.FC = () => {
       />
 
       <Modal
-        open={modal.open}
-        title={modal.row ? '编辑直播间' : '新建直播间'}
-        onCancel={() => setModal({ open: false })}
-        onOk={submit}
+        open={newModalOpen}
+        title="新建直播间"
+        onCancel={() => setNewModalOpen(false)}
+        onOk={submitNew}
         destroyOnHidden
       >
         <Form form={form} layout="vertical">
           <Form.Item
             name="stream_name"
             label="流名 (URL 最后一段)"
-            rules={[{ required: true, pattern: /^[a-zA-Z0-9_-]+$/, message: '仅支持字母数字、下划线与连字符' }]}
+            rules={[
+              {
+                required: true,
+                pattern: /^[a-zA-Z0-9_-]+$/,
+                message: '仅支持字母数字、下划线与连字符',
+              },
+            ]}
           >
-            <Input placeholder="例如 demo" disabled={!!modal.row} />
+            <Input placeholder="例如 demo" />
           </Form.Item>
           <Form.Item name="display_name" label="显示名称">
-            <Input placeholder="例如 我的直播间" />
+            <Input placeholder="例如 我的直播间 (留空则使用流名)" />
           </Form.Item>
-          <Form.Item name="is_private" label="私有直播" valuePropName="checked">
+          <Form.Item
+            name="is_private"
+            label="私有直播"
+            valuePropName="checked"
+            extra="开启后需要登录或观看 Token 才能播放。"
+          >
             <Switch checkedChildren="是" unCheckedChildren="否" />
           </Form.Item>
-          <Form.Item name="chat_enabled" label="开启聊天" valuePropName="checked">
-            <Switch checkedChildren="开" unCheckedChildren="关" />
-          </Form.Item>
-          <Form.Item
-            name="webrtc_play_enabled"
-            label="允许 WebRTC 播放"
-            valuePropName="checked"
-            extra="关闭后本房间禁止 WHEP 拉流（低延迟播放），但 WebRTC 推流（WHIP）不受影响。"
-          >
-            <Switch checkedChildren="允许" unCheckedChildren="禁止" />
-          </Form.Item>
-          <Form.Item name="publish_secret" label="推流密钥（留空自动生成）">
-            <Input.Password />
-          </Form.Item>
-          {/*
-            Watch token is only relevant for private rooms; hide the input
-            unless the "private" switch is on so admins aren't confused.
-          */}
-          <Form.Item
-            noStyle
-            shouldUpdate={(prev, cur) => prev.is_private !== cur.is_private}
-          >
-            {({ getFieldValue }) =>
-              getFieldValue('is_private') ? (
-                <Form.Item name="watch_token" label="观看 Token（私有流使用；留空自动生成）">
-                  <Input.Password />
-                </Form.Item>
-              ) : null
-            }
-          </Form.Item>
+          <Typography.Paragraph type="secondary" style={{ marginTop: 8, marginBottom: 0 }}>
+            推流密钥 / 观看 Token / 播放协议等详细配置请在创建后的配置详情页中调整。
+          </Typography.Paragraph>
         </Form>
       </Modal>
     </div>

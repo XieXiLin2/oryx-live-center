@@ -17,6 +17,21 @@ class Settings(BaseSettings):
     # Example: https://live.example.com
     public_base_url: str = ""
 
+    # Publish base URL — where OBS / ffmpeg pushes streams to.
+    # Often different from ``public_base_url`` when a CDN fronts playback but
+    # publishing must go directly to the origin (or a dedicated push domain).
+    # Expected to be a bare host (``push.example.com``) or ``scheme://host[:port]``.
+    # When empty the backend falls back to ``public_base_url``.
+    #
+    # The backend only uses this to render RTMP / SRT / WHIP URLs shown to the
+    # streamer in the admin UI; it does not proxy any traffic.
+    publish_base_url: str = ""
+
+    # Ports advertised for RTMP / SRT publish URLs in the admin UI.
+    publish_rtmp_port: int = 1935
+    publish_srt_port: int = 10080
+
+
     # Database
     database_url: str = "sqlite+aiosqlite:///./data/app.db"
 

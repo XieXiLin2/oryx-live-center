@@ -85,9 +85,24 @@ rtc_server {
 }
 
 vhost __defaultVhost__ {
+    # ---- low-latency: must mirror the Origin's vhost settings, otherwise
+    # the slower side dominates the end-to-end latency. ----
+    tcp_nodelay     on;
+    min_latency     on;
+    mw_latency      100;
+    gop_cache_max_frames 250;
+
     cluster {
         mode    remote;
         origin  ${ORIGIN_HOST};
+    }
+
+    play {
+        gop_cache   on;
+        queue_length 10;
+        mw_latency  100;
+        mix_correct on;
+        atc         off;
     }
 
     http_remux {
@@ -106,6 +121,7 @@ vhost __defaultVhost__ {
         on_stop  ${ORIGIN_HTTP_BASE}/api/hooks/on_stop;
     }
 }
+
 EOF
 
 cat > docker-compose.yml <<EOF
