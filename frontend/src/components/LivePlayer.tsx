@@ -225,7 +225,7 @@ const LivePlayer: React.FC<LivePlayerProps> = ({ url, format, isLive, placeholde
         }
       };
     }
-  }, [url, format, showPlaceholder, placeholderUrl, isPlaceholderVideo]);
+  }, [url, format, showPlaceholder, placeholderUrl, isPlaceholderVideo, chatEnabled]);
 
   return (
     <div
