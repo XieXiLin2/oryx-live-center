@@ -218,4 +218,20 @@ export const adminApi = {
   getSettings: () => api.get<Record<string, string>>('/admin/settings').then((r) => r.data),
 };
 
+// ---- Branding (site name / logo / copyright) ----
+//
+// The GET is public (used by the global BrandingProvider in store/branding.tsx);
+// the PUT is admin-only and lives under /api/admin/branding.
+export interface BrandingPayload {
+  site_name: string;
+  logo_url: string;
+  copyright: string;
+}
+export const brandingApi = {
+  get: () => api.get<BrandingPayload>('/branding').then((r) => r.data),
+  update: (payload: Partial<BrandingPayload>) =>
+    api.put<BrandingPayload>('/admin/branding', payload).then((r) => r.data),
+};
+
 export default api;
+

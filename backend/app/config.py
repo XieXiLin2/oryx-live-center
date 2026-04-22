@@ -12,6 +12,19 @@ class Settings(BaseSettings):
     debug: bool = False
     allowed_origins: str = "http://localhost:5173"
 
+    # ------------------------------------------------------------------
+    # Branding (overridable from the admin UI).
+    #
+    # These values are the *initial* defaults. Once an admin edits them via
+    # ``PUT /api/admin/settings/branding`` they are persisted in the
+    # ``app_settings`` table and take precedence over these defaults. We keep
+    # env-var defaults so a fresh container boots with sensible branding.
+    # ------------------------------------------------------------------
+    site_name: str = "SRS Live Center"
+    site_logo_url: str = ""
+    site_copyright: str = "© {year} SRS Live Center. All rights reserved."
+
+
     # Public base URL — what the end user / browser sees (Nginx front-facing).
     # Used to construct play URLs for FLV / WebRTC WHEP.
     # Example: https://live.example.com

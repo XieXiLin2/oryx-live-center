@@ -16,6 +16,8 @@ import StreamsManage from './pages/admin/StreamsManage';
 import UsersManage from './pages/admin/UsersManage';
 
 import { AuthProvider, useAuth } from './store/auth';
+import { BrandingProvider } from './store/branding';
+
 
 const AppContent: React.FC = () => {
   const { loading } = useAuth();
@@ -63,11 +65,14 @@ const App: React.FC = () => {
     >
       <AntdApp>
         <BrowserRouter>
-          <AuthProvider>
-            <AppContent />
-          </AuthProvider>
+          <BrandingProvider>
+            <AuthProvider>
+              <AppContent />
+            </AuthProvider>
+          </BrandingProvider>
         </BrowserRouter>
       </AntdApp>
+
     </ConfigProvider>
   );
 };

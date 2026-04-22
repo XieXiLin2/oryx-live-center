@@ -1,35 +1,158 @@
-import { Card, Descriptions, Spin, Typography } from 'antd';
+import { SaveOutlined } from '@ant-design/icons';
+import {
+  App,
+  Button,
+  Card,
+  Descriptions,
+  Form,
+  Input,
+  Spin,
+  Typography,
+} from 'antd';
+
 import React, { useEffect, useState } from 'react';
-import { adminApi } from '../../api';
+import { adminApi, brandingApi, type BrandingPayload } from '../../api';
+import { useBranding } from '../../store/branding';
 
 const { Title, Paragraph } = Typography;
 
+/**
+ * Admin settings page.
+ *
+ * Two sections:
+ *
+ *  1. **站点品牌** — editable from the UI and persisted in the ``app_settings``
+ *     KV table. Saved via ``PUT /api/admin/branding``; on success we call
+ *     ``BrandingProvider.refresh()`` so the header/footer update without a
+ *     page reload.
+ *
+ *  2. **环境变量** — read-only snapshot of the ``.env``-driven values that
+ *     require a backend restart to change. Kept at the bottom so the editable
+ *     branding card is the first thing an admin sees.
+ */
 const Settings: React.FC = () => {
-  const [loading, setLoading] = useState(true);
-  const [data, setData] = useState<Record<string, string>>({});
+  const { message } = App.useApp();
+  const { refresh: refreshBranding } = useBranding();
+
+  // ---- Env settings (read-only) ----
+  const [envLoading, setEnvLoading] = useState(true);
+  const [envData, setEnvData] = useState<Record<string, string>>({});
 
   useEffect(() => {
-    adminApi.getSettings()
-      .then(setData)
-      .finally(() => setLoading(false));
+    adminApi
+      .getSettings()
+      .then(setEnvData)
+      .finally(() => setEnvLoading(false));
   }, []);
 
-  if (loading) return <Spin size="large" />;
+  // ---- Branding (editable) ----
+  const [brandingLoading, setBrandingLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [form] = Form.useForm<BrandingPayload>();
+
+  useEffect(() => {
+    brandingApi
+      .get()
+      .then((data) => form.setFieldsValue(data))
+      .finally(() => setBrandingLoading(false));
+  }, [form]);
+
+  const handleSave = async () => {
+    try {
+      const values = await form.validateFields();
+      setSaving(true);
+      await brandingApi.update(values);
+      await refreshBranding();
+      message.success('品牌信息已保存');
+    } catch (err) {
+      const e = err as { response?: { data?: { detail?: string } }; errorFields?: unknown };
+      if (e.errorFields) return; // form validation — Form already shows the errors inline.
+      message.error(e.response?.data?.detail || '保存失败');
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <div>
       <Title level={3}>系统设置</Title>
-      <Paragraph type="secondary">
-        以下配置由后端 <code>.env</code> 管理，修改需重启服务。
-      </Paragraph>
-      <Card>
-        <Descriptions column={1} bordered size="small">
-          {Object.entries(data).map(([k, v]) => (
-            <Descriptions.Item key={k} label={k}>
-              <code>{String(v)}</code>
-            </Descriptions.Item>
-          ))}
-        </Descriptions>
+
+      {/* Branding card */}
+      <Card
+        title="站点品牌"
+        style={{ marginBottom: 24 }}
+        extra={
+          <Button
+            type="primary"
+            icon={<SaveOutlined />}
+            onClick={handleSave}
+            loading={saving}
+          >
+            保存
+          </Button>
+        }
+      >
+        <Paragraph type="secondary" style={{ marginTop: 0 }}>
+          这些值用于页面左上角的 Logo / 站点名、页面标题后缀以及底部的版权文案。
+          修改后会立刻生效，无需重启服务。页面标题会自动拼接为
+          <code> 当前页面 :: 站点名</code> 的格式。
+        </Paragraph>
+        {brandingLoading ? (
+          <Spin />
+        ) : (
+          <Form form={form} layout="vertical" disabled={saving}>
+            <Form.Item
+              label="站点名称"
+              name="site_name"
+              rules={[{ required: true, message: '站点名称不能为空' }]}
+              extra="同时作为左上角标题以及页面标题的后缀。"
+            >
+              <Input placeholder="例如 My Live Center" maxLength={128} showCount />
+            </Form.Item>
+            <Form.Item
+              label="Logo 图片 URL"
+              name="logo_url"
+              extra="展示在左上角。留空则使用默认的播放图标。建议使用方形小图（如 64x64）。"
+            >
+              <Input placeholder="https://example.com/logo.png" maxLength={1024} />
+            </Form.Item>
+            <Form.Item
+              label="页脚 Copyright"
+              name="copyright"
+              extra={
+                <>
+                  展示在页面最底部。支持 <code>{'{year}'}</code> 占位符，
+                  会在渲染时自动替换为当前年份。
+                </>
+              }
+            >
+              <Input.TextArea
+                rows={2}
+                placeholder="© {year} Your Company. All rights reserved."
+                maxLength={512}
+                showCount
+              />
+            </Form.Item>
+          </Form>
+        )}
+      </Card>
+
+      {/* Env (read-only) card */}
+      <Card title="环境变量（只读）">
+        <Paragraph type="secondary" style={{ marginTop: 0 }}>
+          以下配置由后端 <code>.env</code> 管理，修改需重启服务。
+        </Paragraph>
+        {envLoading ? (
+          <Spin />
+        ) : (
+          <Descriptions column={1} bordered size="small">
+            {Object.entries(envData).map(([k, v]) => (
+              <Descriptions.Item key={k} label={k}>
+                <code>{String(v)}</code>
+              </Descriptions.Item>
+            ))}
+          </Descriptions>
+        )}
       </Card>
     </div>
   );

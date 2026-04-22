@@ -157,7 +157,25 @@ class ViewerSession(Base):
     duration_seconds: Mapped[int] = mapped_column(Integer, default=0)
 
 
+class AppSetting(Base):
+    """Generic key/value store for app-level settings editable from the UI.
+
+    Backs the "branding" trio (``site_name``, ``logo_url``, ``copyright``) and
+    any future admin-editable flag that we don't want to bake into ``.env``.
+    Values are always stored as strings; callers handle type coercion.
+    """
+
+    __tablename__ = "app_settings"
+
+    key: Mapped[str] = mapped_column(String(128), primary_key=True)
+    value: Mapped[str] = mapped_column(Text, default="")
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
 class EdgeNode(Base):
+
     """A CDN / SRS-Edge node the end user can pick as a playback source.
 
     The backend never proxies traffic through these; it only advertises them

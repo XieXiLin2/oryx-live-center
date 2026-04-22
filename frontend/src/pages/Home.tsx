@@ -28,7 +28,9 @@ import { edgeApi, streamApi } from '../api';
 import ChatPanel from '../components/ChatPanel';
 import LivePlayer from '../components/LivePlayer';
 import { useAuth } from '../store/auth';
+import { usePageTitle } from '../store/branding';
 import type { PlaybackSources, StreamInfo, StreamPlayResponse, StreamStats } from '../types';
+
 
 /**
  * Rewrite the host portion of a play URL with the Edge node's base_url.
@@ -95,6 +97,12 @@ const Home: React.FC = () => {
   // Playback sources (origin + edges) and the currently-selected one.
   const [sources, setSources] = useState<PlaybackSources | null>(null);
   const [selectedSource, setSelectedSource] = useState<string>('origin');
+
+  // Override the default "主页" title with the selected room's display name
+  // while a room is active. AppLayout resets it back to "主页" automatically
+  // when `selectedStream` is cleared (route-change effect there runs again).
+  usePageTitle(selectedStream ? selectedStream.display_name || selectedStream.name : '主页');
+
 
   // Load the list of playback sources once. If it fails we silently fall back
   // to "origin only" — the player still works against the origin.
