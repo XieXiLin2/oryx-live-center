@@ -160,7 +160,7 @@ const LivePlayer: React.FC<LivePlayerProps> = ({ url, format, isLive, placeholde
           playsInline: true,
         },
         plugins: [
-          artplayerPluginDocumentPip(),
+          artplayerPluginDocumentPip({}),
           artplayerPluginDanmuku({
             danmuku: [],
             speed: 5,
@@ -170,13 +170,9 @@ const LivePlayer: React.FC<LivePlayerProps> = ({ url, format, isLive, placeholde
             mode: 0,
             margin: [10, '25%'],
             antiOverlap: true,
-            useWorker: true,
             synchronousPlayback: false,
             lockTime: 5,
             maxLength: 100,
-            minWidth: 200,
-            maxWidth: 400,
-            theme: 'light',
           }),
         ],
       };
