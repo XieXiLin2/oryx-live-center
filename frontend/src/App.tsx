@@ -5,6 +5,7 @@ import { BrowserRouter, Route, Routes } from 'react-router-dom';
 import AppLayout from './components/AppLayout';
 import AuthCallback from './pages/AuthCallback';
 import Home from './pages/Home';
+import LiveRoom from './pages/LiveRoom';
 import AdminLayout from './pages/admin/AdminLayout';
 import Dashboard from './pages/admin/Dashboard';
 import Sessions from './pages/admin/Sessions';
@@ -35,6 +36,7 @@ const AppContent: React.FC = () => {
       <Route path="/auth/callback" element={<AuthCallback />} />
       <Route element={<AppLayout />}>
         <Route index element={<Home />} />
+        <Route path="/live/:roomname" element={<LiveRoom />} />
         <Route path="admin" element={<AdminLayout />}>
           <Route index element={<Dashboard />} />
           <Route path="streams" element={<StreamsManage />} />

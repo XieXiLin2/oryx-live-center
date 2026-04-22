@@ -8,7 +8,6 @@ import type {
   StreamConfig,
   StreamInfo,
   StreamPlayResponse,
-  StreamPlaySessionItem,
   StreamPublishSessionItem,
   StreamStats,
   TokenResponse,
@@ -145,12 +144,6 @@ export const adminApi = {
   kickSrsClient: (clientId: string) => api.delete(`/admin/srs/clients/${clientId}`),
 
   // Live statistics
-  getPlaySessions: (stream_name = '', limit = 50, offset = 0) =>
-    api
-      .get<StreamPlaySessionItem[]>('/admin/stats/play-sessions', {
-        params: { stream_name, limit, offset },
-      })
-      .then((r) => r.data),
   getPublishSessions: (stream_name = '', limit = 50, offset = 0) =>
     api
       .get<StreamPublishSessionItem[]>('/admin/stats/publish-sessions', {

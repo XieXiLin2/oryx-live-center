@@ -157,7 +157,7 @@ backend/app/
      - 公开流：直接允许
      - 私有流：token == watch_token ？或者 token 是合法 JWT ？
    未通过 → {"code": 403}，SRS 立刻断开连接。
-4. 通过 → 写 StreamPlaySession；观众的实时数量由 /api/viewer 的 WS 心跳
+4. 通过 → 允许播放；观众的实时数量由 /api/viewer 的 WS 心跳
    独立计算（更精准，不会因 SRS hook 丢失而残留"幽灵观众"）。
 ```
 
@@ -176,7 +176,6 @@ backend/app/
 | `User`                  | `users`                    | 用户，OAuth2 同步；含 `is_admin`、`is_banned` |
 | `StreamConfig`          | `stream_configs`           | 直播间：推流密钥、观看 Token、聊天开关等       |
 | `StreamPublishSession`  | `stream_publish_sessions`  | 每次开播/下播记录（SRS hook 驱动）             |
-| `StreamPlaySession`     | `stream_play_sessions`     | SRS `on_play`/`on_stop` 记录（辅助）           |
 | `ViewerSession`         | `viewer_sessions`          | **主要**观众会话（WS 心跳驱动）                |
 | `ChatMessage`           | `chat_messages`            | 聊天/弹幕消息                                  |
 | `EdgeNode`              | `edge_nodes`               | 已登记的 Edge 节点                             |

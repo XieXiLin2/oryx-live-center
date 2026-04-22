@@ -1,11 +1,17 @@
 import Artplayer from 'artplayer';
+import artplayerPluginDanmuku from 'artplayer-plugin-danmuku';
+import artplayerPluginDocumentPip from 'artplayer-plugin-document-pip';
 import mpegts from 'mpegts.js';
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 interface LivePlayerProps {
   url: string;
   /** 'flv' (HTTP-FLV via mpegts.js) or 'webrtc' (WHEP). */
   format: string;
+  /** Whether the stream is currently live. */
+  isLive: boolean;
+  /** URL of placeholder content (image or video) to show when offline. */
+  placeholderUrl?: string;
   style?: React.CSSProperties;
 }
 
@@ -50,87 +56,35 @@ async function playWebRTC(
   return pc;
 }
 
-const LivePlayer: React.FC<LivePlayerProps> = ({ url, format, style }) => {
+const LivePlayer: React.FC<LivePlayerProps> = ({ url, format, isLive, placeholderUrl, style }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const artRef = useRef<Artplayer | null>(null);
   const mpegtsRef = useRef<ReturnType<typeof mpegts.createPlayer> | null>(null);
   const pcRef = useRef<RTCPeerConnection | null>(null);
+  const [showPlaceholder, setShowPlaceholder] = useState(!isLive);
+
+  // Detect if placeholder is image or video
+  const isPlaceholderVideo = useMemo(() => {
+    if (!placeholderUrl) return false;
+    const ext = placeholderUrl.split('.').pop()?.toLowerCase();
+    return ['mp4', 'webm', 'ogg', 'mov'].includes(ext || '');
+  }, [placeholderUrl]);
+
+  // When stream goes live, switch from placeholder to live stream
+  useEffect(() => {
+    if (isLive && showPlaceholder) {
+      setShowPlaceholder(false);
+    } else if (!isLive && !showPlaceholder && placeholderUrl) {
+      setShowPlaceholder(true);
+    }
+  }, [isLive, showPlaceholder, placeholderUrl]);
 
   useEffect(() => {
-    if (!containerRef.current || !url) return;
+    if (!containerRef.current) return;
 
-    // Tear down previous players.
-    mpegtsRef.current?.destroy();
-    mpegtsRef.current = null;
-    pcRef.current?.close();
-    pcRef.current = null;
-    if (artRef.current) {
-      artRef.current.destroy();
-      artRef.current = null;
-    }
-
-    const options: ConstructorParameters<typeof Artplayer>[0] = {
-      container: containerRef.current,
-      url,
-      isLive: true,
-      autoplay: true,
-      muted: false,
-      autoSize: false,
-      autoMini: false,
-      loop: false,
-      flip: true,
-      playbackRate: false,
-      aspectRatio: true,
-      setting: true,
-      pip: true,
-      fullscreen: true,
-      fullscreenWeb: true,
-      mutex: true,
-      backdrop: true,
-      theme: '#1677ff',
-      lang: 'zh-cn',
-      moreVideoAttr: {
-        crossOrigin: 'anonymous',
-        playsInline: true,
-      },
-    };
-
-    if (format === 'flv' && mpegts.isSupported()) {
-      options.customType = {
-        flv: (video: HTMLVideoElement, streamUrl: string) => {
-          const player = mpegts.createPlayer({
-            type: 'flv',
-            url: streamUrl,
-            isLive: true,
-          } as mpegts.MediaDataSource);
-          player.attachMediaElement(video);
-          player.load();
-          player.play();
-          mpegtsRef.current = player;
-        },
-      };
-      options.type = 'flv';
-    } else if (format === 'webrtc') {
-      options.customType = {
-        webrtc: async (video: HTMLVideoElement, whepUrl: string) => {
-          try {
-            const pc = await playWebRTC(video, whepUrl);
-            pcRef.current = pc;
-            video.play().catch(() => {
-              // Autoplay may be blocked — Artplayer's play button will pick it up.
-            });
-          } catch (err) {
-            console.error('WebRTC play error:', err);
-          }
-        },
-      };
-      options.type = 'webrtc';
-    }
-
-    const art = new Artplayer(options);
-    artRef.current = art;
-
-    return () => {
+    // Show placeholder if offline and placeholder URL is provided
+    if (showPlaceholder && placeholderUrl) {
+      // Tear down any existing players
       mpegtsRef.current?.destroy();
       mpegtsRef.current = null;
       pcRef.current?.close();
@@ -139,8 +93,150 @@ const LivePlayer: React.FC<LivePlayerProps> = ({ url, format, style }) => {
         artRef.current.destroy();
         artRef.current = null;
       }
-    };
-  }, [url, format]);
+
+      // Create ArtPlayer with placeholder content
+      const options: ConstructorParameters<typeof Artplayer>[0] = {
+        container: containerRef.current,
+        url: placeholderUrl,
+        isLive: false,
+        autoplay: true,
+        muted: isPlaceholderVideo,
+        loop: isPlaceholderVideo,
+        autoSize: false,
+        autoMini: false,
+        playbackRate: false,
+        aspectRatio: true,
+        setting: false,
+        pip: false,
+        fullscreen: true,
+        fullscreenWeb: true,
+        mutex: true,
+        backdrop: true,
+        theme: '#1677ff',
+        lang: 'zh-cn',
+        poster: !isPlaceholderVideo ? placeholderUrl : undefined,
+        moreVideoAttr: {
+          crossOrigin: 'anonymous',
+          playsInline: true,
+        },
+      };
+
+      const art = new Artplayer(options);
+      artRef.current = art;
+
+      return () => {
+        if (artRef.current) {
+          artRef.current.destroy();
+          artRef.current = null;
+        }
+      };
+    }
+
+    // Show live stream if online and URL is provided
+    if (!showPlaceholder && url) {
+      // Tear down previous players.
+      mpegtsRef.current?.destroy();
+      mpegtsRef.current = null;
+      pcRef.current?.close();
+      pcRef.current = null;
+      if (artRef.current) {
+        artRef.current.destroy();
+        artRef.current = null;
+      }
+
+      const options: ConstructorParameters<typeof Artplayer>[0] = {
+        container: containerRef.current,
+        url,
+        isLive: true,
+        autoplay: true,
+        muted: false,
+        autoSize: false,
+        autoMini: false,
+        loop: false,
+        flip: true,
+        playbackRate: false,
+        aspectRatio: true,
+        setting: true,
+        pip: true,
+        fullscreen: true,
+        fullscreenWeb: true,
+        mutex: true,
+        backdrop: true,
+        theme: '#1677ff',
+        lang: 'zh-cn',
+        moreVideoAttr: {
+          crossOrigin: 'anonymous',
+          playsInline: true,
+        },
+        plugins: [
+          artplayerPluginDocumentPip(),
+          artplayerPluginDanmuku({
+            danmuku: [],
+            speed: 5,
+            opacity: 1,
+            fontSize: 25,
+            color: '#FFFFFF',
+            mode: 0,
+            margin: [10, '25%'],
+            antiOverlap: true,
+            useWorker: true,
+            synchronousPlayback: false,
+            lockTime: 5,
+            maxLength: 100,
+            minWidth: 200,
+            maxWidth: 400,
+            theme: 'light',
+          }),
+        ],
+      };
+
+      if (format === 'flv' && mpegts.isSupported()) {
+        options.customType = {
+          flv: (video: HTMLVideoElement, streamUrl: string) => {
+            const player = mpegts.createPlayer({
+              type: 'flv',
+              url: streamUrl,
+              isLive: true,
+            } as mpegts.MediaDataSource);
+            player.attachMediaElement(video);
+            player.load();
+            player.play();
+            mpegtsRef.current = player;
+          },
+        };
+        options.type = 'flv';
+      } else if (format === 'webrtc') {
+        options.customType = {
+          webrtc: async (video: HTMLVideoElement, whepUrl: string) => {
+            try {
+              const pc = await playWebRTC(video, whepUrl);
+              pcRef.current = pc;
+              video.play().catch(() => {
+                // Autoplay may be blocked — Artplayer's play button will pick it up.
+              });
+            } catch (err) {
+              console.error('WebRTC play error:', err);
+            }
+          },
+        };
+        options.type = 'webrtc';
+      }
+
+      const art = new Artplayer(options);
+      artRef.current = art;
+
+      return () => {
+        mpegtsRef.current?.destroy();
+        mpegtsRef.current = null;
+        pcRef.current?.close();
+        pcRef.current = null;
+        if (artRef.current) {
+          artRef.current.destroy();
+          artRef.current = null;
+        }
+      };
+    }
+  }, [url, format, showPlaceholder, placeholderUrl, isPlaceholderVideo]);
 
   return (
     <div

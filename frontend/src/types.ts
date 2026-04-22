@@ -67,6 +67,7 @@ export interface StreamInfo {
   webrtc_play_enabled: boolean;
   is_live: boolean;
   formats: string[];
+  offline_placeholder_url: string;
 }
 
 export interface StreamPlayResponse {
@@ -134,17 +135,6 @@ export interface UserListResponse {
 export interface ChatHistoryResponse {
   messages: ChatMessage[];
   total: number;
-}
-
-export interface StreamPlaySessionItem {
-  id: number;
-  srs_client_id: string;
-  stream_name: string;
-  user_id: number | null;
-  client_ip: string;
-  started_at: string;
-  ended_at: string | null;
-  duration_seconds: number;
 }
 
 export interface StreamStats {

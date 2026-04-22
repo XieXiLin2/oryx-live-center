@@ -29,10 +29,6 @@
 | **独立登录观众 (`unique_logged_in_viewers`)** | **后端 (WS)** | `COUNT(DISTINCT user_id)` |
 | **峰值并发观众 (`peak_session_viewers`)** | **后端 (WS, 内存)** | 当前直播区间内 WS 并发的最大值 |
 
-> 注：旧的 `StreamPlaySession` 表（由 SRS hook 写入）与 `on_play`/`on_stop`
-> hook **保持原样不动**，但**不再用于任何对外的播放统计聚合**。它仍然存在以便
-> 兼容历史数据 / 风控查询。
-
 ---
 
 ## 2. 数据流
@@ -92,7 +88,7 @@
 | `backend/app/models.py` :: `ViewerSession` | 后端独占的观看会话表 |
 | `backend/app/routers/viewer.py` | **新增**：WS 端点 + `ViewerConnectionManager` + 心跳 + stats 计算 + 广播 |
 | `backend/app/stats_reconciler.py` :: `_viewer_sweep_loop` | 每 10s 扫描 `last_heartbeat_at < now-40s` 的会话，关闭并广播新 stats |
-| `backend/app/stats_reconciler.py` :: `_publish_play_loop` | 30s 一轮，沿用旧逻辑维护 SRS 推流真相和旧 `StreamPlaySession` 兼容关闭 |
+| `backend/app/stats_reconciler.py` :: `_publish_play_loop` | 30s 一轮，维护 SRS 推流真相，关闭 orphan publish sessions |
 | `backend/app/routers/streams.py` :: `list_streams` | `clients` 字段改为聚合 `ViewerSession`（开放连接数） |
 | `backend/app/routers/streams.py` :: `get_stream_stats` | 播放侧字段全部改为基于 `ViewerSession`；推流侧仍来自 `StreamPublishSession` + SRS `is_live` |
 | `backend/app/routers/hooks.py` | **保持不动**：仍接收 SRS 的全部 4 个回调 |

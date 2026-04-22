@@ -191,6 +191,9 @@ async def list_streams(
         # counts lingering until the reconciler runs.
         viewer_count = open_viewer_map.get(cfg.stream_name, 0) if is_live else 0
 
+        # Resolve offline placeholder URL: per-room override or global default.
+        offline_placeholder = cfg.offline_placeholder_url or settings.offline_placeholder_url
+
         out.append(
             StreamInfo(
                 name=cfg.stream_name,
@@ -204,6 +207,7 @@ async def list_streams(
                 webrtc_play_enabled=settings.webrtc_play_enabled and room_webrtc_ok,
                 is_live=is_live,
                 formats=formats,
+                offline_placeholder_url=offline_placeholder,
             )
         )
 
@@ -647,6 +651,8 @@ async def update_stream_config(
         config.chat_enabled = request.chat_enabled
     if request.webrtc_play_enabled is not None:
         config.webrtc_play_enabled = request.webrtc_play_enabled
+    if request.offline_placeholder_url is not None:
+        config.offline_placeholder_url = request.offline_placeholder_url
 
     await db.flush()
     await db.refresh(config)

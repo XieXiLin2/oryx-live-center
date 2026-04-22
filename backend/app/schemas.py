@@ -90,6 +90,7 @@ class StreamInfo(BaseModel):
     webrtc_play_enabled: bool = True
     is_live: bool = False
     formats: list[str] = []
+    offline_placeholder_url: str = ""
 
 
 class StreamListResponse(BaseModel):
@@ -119,6 +120,7 @@ class StreamConfigRequest(BaseModel):
     watch_token: Optional[str] = None
     chat_enabled: Optional[bool] = None
     webrtc_play_enabled: Optional[bool] = None
+    offline_placeholder_url: Optional[str] = None
 
 
 class StreamConfigResponse(BaseModel):
@@ -130,6 +132,7 @@ class StreamConfigResponse(BaseModel):
     watch_token: str
     chat_enabled: bool
     webrtc_play_enabled: bool = True
+    offline_placeholder_url: str = ""
     is_live: bool
     viewer_count: int
     total_play_count: int
@@ -199,20 +202,7 @@ class PlaybackSourcesResponse(BaseModel):
 
 
 
-# ---- Stream Play / Publish Statistics ----
-class StreamPlaySessionResponse(BaseModel):
-    id: int
-    srs_client_id: str
-    stream_name: str
-    user_id: Optional[int] = None
-    client_ip: str
-    started_at: datetime.datetime
-    ended_at: Optional[datetime.datetime] = None
-    duration_seconds: int
-
-    model_config = {"from_attributes": True}
-
-
+# ---- Stream Publish / Viewer Statistics ----
 class StreamPublishSessionResponse(BaseModel):
     id: int
     srs_client_id: str

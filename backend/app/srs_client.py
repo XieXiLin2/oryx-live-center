@@ -63,6 +63,15 @@ async def list_clients() -> list[dict[str, Any]]:
     return data.get("clients", [])
 
 
+async def list_vhosts() -> list[dict[str, Any]]:
+    """Return list of vhosts from SRS."""
+    try:
+        data = await _request("GET", "/api/v1/vhosts/")
+    except SRSAPIError:
+        return []
+    return data.get("vhosts", [])
+
+
 async def kick_client(client_id: str) -> dict[str, Any]:
     return await _request("DELETE", f"/api/v1/clients/{client_id}")
 
@@ -134,3 +143,11 @@ def stream_is_publishing(stream_info: dict[str, Any] | None) -> bool:
     audio = stream_info.get("audio") or {}
     has_media = bool(video.get("codec") or audio.get("codec"))
     return has_media
+
+
+def is_client_publishing(client_info: dict[str, Any]) -> bool:
+    """Check if a client is a publisher based on its type field.
+
+    SRS clients API returns type field: 'publish' for publishers, 'play' for viewers.
+    """
+    return client_info.get("type") == "publish"

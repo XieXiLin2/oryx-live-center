@@ -19,13 +19,11 @@ from app.config import settings
 from app.database import get_db
 from app.models import (
     ChatMessage,
-    StreamPlaySession,
     StreamPublishSession,
     User,
     ViewerSession,
 )
 from app.schemas import (
-    StreamPlaySessionResponse,
     StreamPublishSessionResponse,
     UserBanRequest,
     UserListResponse,
@@ -139,24 +137,8 @@ async def kick_srs_client(client_id: str, _admin: User = Depends(require_admin))
 
 
 # ===========================================================================
-# Play / Publish statistics
+# Publish statistics
 # ===========================================================================
-
-
-@router.get("/stats/play-sessions", response_model=list[StreamPlaySessionResponse])
-async def list_play_sessions(
-    stream_name: str = Query(""),
-    limit: int = Query(50, ge=1, le=500),
-    offset: int = Query(0, ge=0),
-    db: AsyncSession = Depends(get_db),
-    _admin: User = Depends(require_admin),
-) -> list[StreamPlaySessionResponse]:
-    query = select(StreamPlaySession).order_by(StreamPlaySession.started_at.desc())
-    if stream_name:
-        query = query.where(StreamPlaySession.stream_name == stream_name)
-    query = query.offset(offset).limit(limit)
-    result = await db.execute(query)
-    return [StreamPlaySessionResponse.model_validate(s) for s in result.scalars().all()]
 
 
 @router.get("/stats/publish-sessions", response_model=list[StreamPublishSessionResponse])

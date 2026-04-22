@@ -1,33 +1,25 @@
-"""Background reconciler that keeps DB-owned play/publish statistics accurate.
-
-Why this exists
+"""
 ===============
-SRS's HTTP hooks (`on_play` / `on_stop` / `on_publish` / `on_unpublish`) are
-our **primary source of truth** for "who is watching" and "how long did they
-watch". That already lives in the `stream_play_sessions` and
-`stream_publish_sessions` tables, so the backend doesn't need SRS's own
-`clients` counter for business metrics.
+SRS's HTTP hooks (`on_publish` / `on_unpublish`) track publisher sessions in
+`stream_publish_sessions`. Viewer sessions are tracked via WebSocket heartbeats
+in `viewer_sessions`.
 
 But hooks can be **missed** in several failure modes:
 
 * The publisher crashes / network dies → SRS may or may not fire `on_unpublish`
-* The viewer closes their tab and the stream dies before `on_stop` reaches us
 * Our app container restarts mid-session
 * SRS was restarted (all its sessions are gone but we still have open rows)
 
 So we periodically reconcile our DB against SRS's ground truth for **liveness**:
 
 * "Does SRS actually have an active publisher for stream X right now?"
-  If **no** and we still think the stream is live → close the publish
-  session, mark the room offline, and close any lingering play sessions.
-
-* "Do we have play sessions whose SRS client_id is no longer in SRS's client
-  list?"  → close them (on_stop was lost).
+  If **no** and we still think the stream is live → close the publish session
+  and mark the room offline.
 
 The result is that:
 
 * `StreamConfig.is_live`        ← derived from SRS stream list (authoritative)
-* `StreamConfig.viewer_count`   ← recomputed from open `stream_play_sessions`
+* `StreamConfig.viewer_count`   ← recomputed from open `viewer_sessions`
 * session `duration_seconds`    ← filled in whether ended via hook or reconciler
 """
 
@@ -44,17 +36,16 @@ from app import srs_client
 from app.database import async_session
 from app.models import (
     StreamConfig,
-    StreamPlaySession,
     StreamPublishSession,
     ViewerSession,
 )
 
 logger = logging.getLogger(__name__)
 
-# How often to reconcile SRS-driven publish/play sessions. Short enough that
+# How often to reconcile SRS-driven publish sessions. Short enough that
 # "ghost counts" only linger briefly after hook loss; long enough not to
 # hammer the SRS API.
-RECONCILE_INTERVAL_SECONDS = 30
+RECONCILE_INTERVAL_SECONDS = 5
 
 # How often to sweep viewer-websocket sessions for stale heartbeats.
 # Frontends ping every ~15s; anything older than HEARTBEAT_TIMEOUT is
@@ -110,40 +101,17 @@ async def _reconcile_once(db: AsyncSession) -> None:
             sess.stream_name, sess.srs_client_id, sess.duration_seconds,
         )
 
-    # -------- 2. Close orphan play sessions --------
-    result = await db.execute(
-        select(StreamPlaySession).where(StreamPlaySession.ended_at.is_(None))
-    )
-    open_plays = list(result.scalars().all())
-    for sess in open_plays:
-        # A viewer session is orphan if its stream isn't publishing anymore
-        # OR its SRS client_id has disappeared from the SRS client list.
-        stream_alive = sess.stream_name in publishing_streams
-        client_alive = (
-            not sess.srs_client_id  # no tracking id → trust it
-            or sess.srs_client_id in live_client_ids
-        )
-        if stream_alive and client_alive:
-            continue
-        sess.ended_at = now
-        if sess.started_at:
-            sess.duration_seconds = max(0, int((now - sess.started_at).total_seconds()))
-        logger.info(
-            "Reconciler: closed orphan play session stream=%s client=%s dur=%ss",
-            sess.stream_name, sess.srs_client_id, sess.duration_seconds,
-        )
-
     await db.flush()
 
-    # -------- 3. Re-derive per-room fields --------
+    # -------- 2. Re-derive per-room fields --------
     result = await db.execute(select(StreamConfig))
     configs = list(result.scalars().all())
 
-    # Fresh count of still-open play sessions per stream.
+    # Fresh count of still-open viewer sessions per stream.
     count_result = await db.execute(
-        select(StreamPlaySession.stream_name, func.count(StreamPlaySession.id))
-        .where(StreamPlaySession.ended_at.is_(None))
-        .group_by(StreamPlaySession.stream_name)
+        select(ViewerSession.stream_name, func.count(ViewerSession.id))
+        .where(ViewerSession.ended_at.is_(None))
+        .group_by(ViewerSession.stream_name)
     )
     live_viewer_map: dict[str, int] = {name: cnt for name, cnt in count_result.all()}
 
@@ -154,7 +122,7 @@ async def _reconcile_once(db: AsyncSession) -> None:
             cfg.last_unpublish_at = now
         cfg.is_live = new_live
 
-        # Viewer count: from our own session table; zero if stream went offline.
+        # Viewer count: from viewer sessions; zero if stream went offline.
         cfg.viewer_count = live_viewer_map.get(cfg.stream_name, 0) if new_live else 0
 
     await db.flush()

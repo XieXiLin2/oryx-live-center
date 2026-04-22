@@ -92,6 +92,17 @@ class Settings(BaseSettings):
     # ------------------------------------------------------------------
     webrtc_play_enabled: bool = True
 
+    # ------------------------------------------------------------------
+    # Offline placeholder (image or video shown when stream is offline).
+    #
+    # Global default URL for placeholder content (image or video) displayed
+    # when a stream is not live. Can be overridden per-stream in StreamConfig.
+    # Supports:
+    #   - Image URLs (jpg, png, gif, etc.)
+    #   - Video URLs (mp4, webm, etc.)
+    # ------------------------------------------------------------------
+    offline_placeholder_url: str = ""
+
     # Optional shared secret for SRS http_hooks callbacks.
     # If set, SRS must include it in the callback URL (e.g. as ?hook_secret=xxx)
     # so that the backend can verify callbacks are coming from SRS, not forged.

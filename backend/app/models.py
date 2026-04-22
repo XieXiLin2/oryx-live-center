@@ -75,6 +75,11 @@ class StreamConfig(Base):
     # ``settings.webrtc_play_enabled`` is True. WHIP publish is unaffected.
     webrtc_play_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
 
+    # Offline placeholder URL (image or video shown when stream is offline).
+    # Overrides the global ``settings.offline_placeholder_url`` for this room.
+    # Empty string means use the global default.
+    offline_placeholder_url: Mapped[str] = mapped_column(String(1024), default="")
+
     # ---- Live state / statistics (updated via SRS hooks) ----
     is_live: Mapped[bool] = mapped_column(Boolean, default=False)
     viewer_count: Mapped[int] = mapped_column(Integer, default=0)
@@ -86,23 +91,6 @@ class StreamConfig(Base):
     updated_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
-
-
-class StreamPlaySession(Base):
-    """A single viewer play session, tracked via SRS on_play/on_stop hooks."""
-
-    __tablename__ = "stream_play_sessions"
-
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    # SRS client ID (from on_play payload) — used to correlate on_stop.
-    srs_client_id: Mapped[str] = mapped_column(String(128), index=True, default="")
-    stream_name: Mapped[str] = mapped_column(String(255), index=True)
-    user_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
-    client_ip: Mapped[str] = mapped_column(String(64), default="")
-    user_agent: Mapped[str] = mapped_column(String(512), default="")
-    started_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    ended_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    duration_seconds: Mapped[int] = mapped_column(Integer, default=0)
 
 
 class StreamPublishSession(Base):
@@ -120,20 +108,15 @@ class StreamPublishSession(Base):
 
 
 class ViewerSession(Base):
-    """A single **frontend**-driven viewer session.
+    """观众会话 - 前端驱动的观看会话记录。
 
-    Unlike :class:`StreamPlaySession` (which is populated from SRS hooks and
-    left untouched so it can evolve with the media layer), this table is fully
-    owned by the backend and written exclusively from the `/ws/viewer/...`
-    WebSocket lifecycle:
+    完全由后端通过 `/api/viewer/ws/<stream>` WebSocket 生命周期管理：
 
-    * Row is inserted when the WS connection is accepted.
-    * `last_heartbeat_at` is advanced on every client ping.
-    * Row is closed (`ended_at`, `duration_seconds`) when the WS disconnects
-      **or** when a background sweeper finds the heartbeat to be stale.
+    * WS 连接建立时插入行
+    * 每次客户端 ping 更新 `last_heartbeat_at`
+    * WS 断开或后台清理器发现心跳过期时关闭会话（填充 `ended_at` 和 `duration_seconds`）
 
-    Because it doesn't depend on SRS `on_play` / `on_stop`, it works even when
-    those hooks are missed, reordered or intentionally disabled for a deploy.
+    不依赖 SRS `on_play` / `on_stop` hook，即使 hook 丢失、乱序或被禁用也能正常工作。
     """
 
     __tablename__ = "viewer_sessions"

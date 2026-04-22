@@ -20,7 +20,6 @@ import React, { useCallback, useEffect, useState } from 'react';
 type DateLike = { toISOString: () => string };
 import { adminApi } from '../../api';
 import type {
-  StreamPlaySessionItem,
   StreamPublishSessionItem,
   ViewerSessionItem,
   ViewerSessionsQuery,
@@ -40,20 +39,15 @@ const fmtDuration = (s: number) => {
 };
 
 const Sessions: React.FC = () => {
-  // --- Legacy (SRS hook) tables ---
+  // --- Publish sessions ---
   const [filter, setFilter] = useState('');
-  const [plays, setPlays] = useState<StreamPlaySessionItem[]>([]);
   const [pubs, setPubs] = useState<StreamPublishSessionItem[]>([]);
   const [loadingLegacy, setLoadingLegacy] = useState(false);
 
   const loadLegacy = useCallback(async () => {
     setLoadingLegacy(true);
     try {
-      const [p, pb] = await Promise.all([
-        adminApi.getPlaySessions(filter, 200, 0),
-        adminApi.getPublishSessions(filter, 200, 0),
-      ]);
-      setPlays(p);
+      const pb = await adminApi.getPublishSessions(filter, 200, 0);
       setPubs(pb);
     } finally {
       setLoadingLegacy(false);
@@ -143,7 +137,7 @@ const Sessions: React.FC = () => {
           // -----------------------------------------------------------
           {
             key: 'viewer',
-            label: '观众会话（WS）',
+            label: '观众会话',
             children: (
               <>
                 <Space wrap style={{ marginBottom: 12 }}>
@@ -241,55 +235,6 @@ const Sessions: React.FC = () => {
                       width: 100,
                       render: fmtDuration,
                     },
-                  ]}
-                />
-              </>
-            ),
-          },
-          // -----------------------------------------------------------
-          // Legacy (SRS-hook-driven) — kept for backwards compatibility
-          // -----------------------------------------------------------
-          {
-            key: 'play',
-            label: 'SRS Play 会话（旧）',
-            children: (
-              <>
-                <Space style={{ marginBottom: 12 }}>
-                  <Input.Search
-                    placeholder="按流名筛选"
-                    allowClear
-                    value={filter}
-                    onChange={(e) => setFilter(e.target.value)}
-                    onSearch={loadLegacy}
-                    style={{ width: 240 }}
-                  />
-                  <Button icon={<ReloadOutlined />} onClick={loadLegacy}>
-                    刷新
-                  </Button>
-                </Space>
-                <Table<StreamPlaySessionItem>
-                  rowKey="id"
-                  loading={loadingLegacy}
-                  dataSource={plays}
-                  size="small"
-                  pagination={{ pageSize: 30 }}
-                  columns={[
-                    { title: '#', dataIndex: 'id', width: 70 },
-                    { title: '流名', dataIndex: 'stream_name' },
-                    {
-                      title: '用户',
-                      dataIndex: 'user_id',
-                      render: (v) => v ?? <Tag>游客</Tag>,
-                    },
-                    { title: 'IP', dataIndex: 'client_ip' },
-                    { title: '开始', dataIndex: 'started_at' },
-                    {
-                      title: '状态',
-                      dataIndex: 'ended_at',
-                      render: (v) =>
-                        v ? <Tag>已结束</Tag> : <Tag color="green">观看中</Tag>,
-                    },
-                    { title: '时长', dataIndex: 'duration_seconds', render: fmtDuration },
                   ]}
                 />
               </>

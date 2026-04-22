@@ -55,7 +55,8 @@ const Dashboard: React.FC = () => {
   if (loading) return <Spin size="large" />;
 
   const srs: SrsSelf = summary?.data?.self ?? summary?.self ?? {};
-  const version = summary?.data?.version ?? summary?.version ?? '—';
+  const version = summary?.data?.self?.version ?? summary?.data?.version ?? summary?.version ?? '—';
+  const onlineStreams = srsStreams.filter((s) => s.publish?.active).length;
 
   return (
     <div>
@@ -73,7 +74,7 @@ const Dashboard: React.FC = () => {
         </Col>
         <Col span={6}>
           <Card>
-            <Statistic title="在线流" value={srsStreams.length} />
+            <Statistic title="在线流" value={onlineStreams} />
           </Card>
         </Col>
         <Col span={6}>

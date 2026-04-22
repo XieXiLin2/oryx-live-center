@@ -33,7 +33,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth import decode_access_token
 from app.config import settings
 from app.database import get_db
-from app.models import StreamConfig, StreamPlaySession, StreamPublishSession, User
+from app.models import StreamConfig, StreamPublishSession, User
 
 logger = logging.getLogger(__name__)
 
@@ -208,21 +208,9 @@ async def on_play(request: Request, db: AsyncSession = Depends(get_db)) -> dict[
             logger.warning("on_play rejected: unauthorized viewer for private stream %s", stream_name)
             return DENY_FORBIDDEN
 
-    # Record the play session and bump counters.
+    # Authorization passed. Viewer count tracking is now handled by the
+    # WebSocket-driven ViewerSession (see routers/viewer.py), not by hooks.
     logger.info("on_play stream=%s ip=%s client=%s user=%s", stream_name, ip, client_id, user.id if user else None)
-
-    if config is not None:
-        config.viewer_count = (config.viewer_count or 0) + 1
-        config.total_play_count = (config.total_play_count or 0) + 1
-
-    db.add(StreamPlaySession(
-        srs_client_id=client_id,
-        stream_name=stream_name,
-        user_id=user.id if user else None,
-        client_ip=ip,
-        started_at=dt.datetime.now(dt.timezone.utc),
-    ))
-    await db.flush()
     return ALLOW
 
 
@@ -240,29 +228,9 @@ async def on_stop(request: Request, db: AsyncSession = Depends(get_db)) -> dict[
     stream_name = body.get("stream", "")
     client_id = str(body.get("client_id", ""))
 
+    # Viewer disconnected. Viewer count tracking is now handled by the
+    # WebSocket-driven ViewerSession (see routers/viewer.py), not by hooks.
     logger.info("on_stop stream=%s client=%s", stream_name, client_id)
-
-    now = dt.datetime.now(dt.timezone.utc)
-
-    result = await db.execute(select(StreamConfig).where(StreamConfig.stream_name == stream_name))
-    config = result.scalar_one_or_none()
-    if config is not None:
-        config.viewer_count = max(0, (config.viewer_count or 0) - 1)
-
-    if client_id:
-        result = await db.execute(
-            select(StreamPlaySession)
-            .where(StreamPlaySession.srs_client_id == client_id)
-            .where(StreamPlaySession.ended_at.is_(None))
-            .order_by(StreamPlaySession.id.desc())
-        )
-        sess = result.scalars().first()
-        if sess is not None:
-            sess.ended_at = now
-            if sess.started_at:
-                sess.duration_seconds = int((now - sess.started_at).total_seconds())
-
-    await db.flush()
     return ALLOW
 
 

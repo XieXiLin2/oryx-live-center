@@ -34,3 +34,6 @@ backend/data/
 
 # ===== Docker =====
 docker-compose.override.yml
+
+# ===== Claude Code =====
+.claude/
