@@ -453,18 +453,44 @@ const StreamDetail: React.FC = () => {
 
                 <Title level={5}>OBS 推流 (SRT)</Title>
                 <Paragraph>
-                  从 OBS 28 起原生支持 SRT，仅需将 <b>服务器</b> 填为完整 SRT URL，
-                  <b>串流密钥</b> 留空：
+                  从 OBS 28 起原生支持 SRT，从 OBS 32 起原生支持 WHIP（WebRTC 推流）。
+                  SRT 推流仅需将 <b>服务器</b> 填为完整 SRT URL，<b>串流密钥</b> 留空：
                 </Paragraph>
                 <CodeBlock code={urls.srt} />
 
-                <Divider />
+                <Title level={5}>OBS 推流 (WHIP / WebRTC)</Title>
+                <Paragraph>
+                  <b>OBS 32+</b> 原生支持 WHIP 推流，延迟更低且无需开放 RTMP 端口。
+                  配置步骤：
+                </Paragraph>
+                <ol style={{ lineHeight: 1.8 }}>
+                  <li>
+                    打开 OBS → <b>设置</b> → <b>推流</b>
+                  </li>
+                  <li>
+                    <b>服务</b> 下拉菜单选择 <b>WHIP</b>
+                  </li>
+                  <li>
+                    <b>服务器</b> 填入以下 WHIP URL：
+                    <div style={{ marginTop: 8 }}>
+                      <CodeBlock code={urls.whip} />
+                    </div>
+                  </li>
+                  <li>
+                    <b>Bearer Token</b> 留空（推流密钥已包含在 URL 中）
+                  </li>
+                  <li>
+                    点击 <b>确定</b> 保存设置，然后点击 <b>开始推流</b>
+                  </li>
+                </ol>
                 <Alert
-                  type="info"
-                  message="WHIP (WebRTC 推流) 尚未集成在 OBS 原生界面"
-                  description="若需要使用 WHIP 推流，建议改用 ffmpeg (>=7.0) 或 OBS WHIP 插件。"
+                  type="success"
+                  message="推荐使用 WHIP"
+                  description="相比 RTMP，WHIP 延迟更低（通常 < 1 秒），且基于 WebRTC 协议更适合实时互动场景。"
                   showIcon
+                  style={{ marginTop: 16 }}
                 />
+                <Divider />
               </Card>
             ),
           },

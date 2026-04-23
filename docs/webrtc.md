@@ -10,7 +10,7 @@
 
 | 动作 | 协议 | 是否受开关影响 |
 | --- | --- | --- |
-| **推流** | WebRTC **WHIP**（OBS 29+ / Web 推送 SDK） | ❌ 不受影响 |
+| **推流** | WebRTC **WHIP**（OBS 32+ / Web 推送 SDK） | ❌ 不受影响 |
 | **推流** | RTMP / SRT | ❌ 不受影响 |
 | **播放** | WebRTC **WHEP**（低延迟） | ✅ 受开关控制 |
 | **播放** | HTTP-FLV / HLS | ❌ 不受影响 |
@@ -82,7 +82,7 @@ WEBRTC_PLAY_ENABLED=true    # 默认为 true；设为 false 全局禁用 WebRTC 
 WEBRTC_PLAY_ENABLED=false
 ```
 
-- 主播：OBS 29+ 用 WHIP 推到 `https://live.example.com/rtc/v1/whip/?app=live&stream=demo`
+- 主播：OBS 32+ 用 WHIP 推到 `https://live.example.com/rtc/v1/whip/?app=live&stream=demo`
 - 观众：前端只看到 FLV 选项，走 `https://live.example.com/live/demo.flv`
 
 ### 场景 B：保留 WebRTC 低延迟播放，但个别房间想关掉

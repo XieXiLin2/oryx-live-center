@@ -110,7 +110,9 @@ def _build_publish_srt_url(stream_name: str, secret: str) -> Optional[str]:
 
 
 def _build_publish_whip_url(stream_name: str, secret: str) -> Optional[str]:
-    base = _publish_whip_base()
+    # WHIP must use the actual server URL, not publish_base_url or CDN.
+    # WebRTC signaling requires direct connection to SRS, CDNs don't support WHIP protocol.
+    base = settings.public_base_url.rstrip("/") if settings.public_base_url else ""
     if not base:
         return None
     params: dict[str, str] = {"app": settings.srs_app, "stream": stream_name}
