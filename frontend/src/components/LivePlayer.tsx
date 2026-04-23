@@ -63,14 +63,50 @@ const LivePlayer: React.FC<LivePlayerProps> = ({ url, format, isLive, placeholde
   const artRef = useRef<Artplayer | null>(null);
   const mpegtsRef = useRef<ReturnType<typeof mpegts.createPlayer> | null>(null);
   const pcRef = useRef<RTCPeerConnection | null>(null);
+  const offlineTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [showPlaceholder, setShowPlaceholder] = React.useState(false);
+  const wasLiveRef = useRef(isLive);
 
-  const showPlaceholder = !isLive && !!placeholderUrl;
-
-  const isPlaceholderVideo = useMemo(() => {
-    if (!placeholderUrl) return false;
+  const placeholderMediaType = useMemo(() => {
+    if (!placeholderUrl) return null;
     const ext = placeholderUrl.split('.').pop()?.toLowerCase();
-    return ['mp4', 'webm', 'ogg', 'mov'].includes(ext || '');
+    if (['mp4', 'webm', 'ogg', 'mov'].includes(ext || '')) return 'video';
+    if (['mp3', 'wav', 'ogg', 'aac', 'm4a'].includes(ext || '')) return 'audio';
+    if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(ext || '')) return 'image';
+    // Assume it's a stream URL (HLS/FLV/etc)
+    return 'stream';
   }, [placeholderUrl]);
+
+  // Handle 5-minute delay before showing placeholder
+  useEffect(() => {
+    // Clear any existing timer
+    if (offlineTimerRef.current) {
+      clearTimeout(offlineTimerRef.current);
+      offlineTimerRef.current = null;
+    }
+
+    if (isLive) {
+      // Stream is live - hide placeholder immediately
+      setShowPlaceholder(false);
+      wasLiveRef.current = true;
+    } else if (wasLiveRef.current && placeholderUrl) {
+      // Stream just went offline and we have a placeholder - start 5-minute timer
+      offlineTimerRef.current = setTimeout(() => {
+        setShowPlaceholder(true);
+      }, 5 * 60 * 1000); // 5 minutes
+      wasLiveRef.current = false;
+    } else if (!wasLiveRef.current && placeholderUrl) {
+      // Stream was already offline (initial load) - show placeholder immediately
+      setShowPlaceholder(true);
+    }
+
+    return () => {
+      if (offlineTimerRef.current) {
+        clearTimeout(offlineTimerRef.current);
+        offlineTimerRef.current = null;
+      }
+    };
+  }, [isLive, placeholderUrl]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -87,14 +123,31 @@ const LivePlayer: React.FC<LivePlayerProps> = ({ url, format, isLive, placeholde
         artRef.current = null;
       }
 
-      // Create ArtPlayer with placeholder content
+      // Handle image placeholders separately (ArtPlayer can't play images)
+      if (placeholderMediaType === 'image') {
+        const img = document.createElement('img');
+        img.src = placeholderUrl;
+        img.style.width = '100%';
+        img.style.height = '100%';
+        img.style.objectFit = 'contain';
+        img.alt = '直播间离线';
+        containerRef.current.innerHTML = '';
+        containerRef.current.appendChild(img);
+        return () => {
+          if (containerRef.current) {
+            containerRef.current.innerHTML = '';
+          }
+        };
+      }
+
+      // Create ArtPlayer with placeholder content (video/audio/stream)
       const options: ConstructorParameters<typeof Artplayer>[0] = {
         container: containerRef.current,
         url: placeholderUrl,
-        isLive: false,
+        isLive: placeholderMediaType === 'stream',
         autoplay: true,
-        muted: isPlaceholderVideo,
-        loop: isPlaceholderVideo,
+        muted: placeholderMediaType === 'video',
+        loop: placeholderMediaType === 'video' || placeholderMediaType === 'audio',
         autoSize: false,
         autoMini: false,
         playbackRate: false,
@@ -107,7 +160,6 @@ const LivePlayer: React.FC<LivePlayerProps> = ({ url, format, isLive, placeholde
         backdrop: true,
         theme: '#1677ff',
         lang: 'zh-cn',
-        poster: !isPlaceholderVideo ? placeholderUrl : undefined,
         moreVideoAttr: {
           crossOrigin: 'anonymous',
           playsInline: true,
@@ -225,7 +277,7 @@ const LivePlayer: React.FC<LivePlayerProps> = ({ url, format, isLive, placeholde
         }
       };
     }
-  }, [url, format, showPlaceholder, placeholderUrl, isPlaceholderVideo, chatEnabled]);
+  }, [url, format, showPlaceholder, placeholderUrl, placeholderMediaType, chatEnabled]);
 
   return (
     <div
