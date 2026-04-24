@@ -77,9 +77,14 @@ rtc_server {
     # 传输协议：udp, tcp, 或 all（同时支持 UDP 和 TCP）
     protocol $WEBRTC_PROTOCOL;
     
-    # TCP 端口（仅当 protocol 为 tcp 或 all 时需要）
-    # 可通过环境变量 WEBRTC_TCP_PORT 配置
-    # tcp $WEBRTC_TCP_PORT;
+    # TCP 配置（仅当 protocol 为 tcp 或 all 时需要）
+    tcp {
+        # 启用 WebRTC over TCP
+        # 当 WEBRTC_PROTOCOL 为 tcp 或 all 时设置为 on
+        enabled off;
+        # TCP 端口，可通过环境变量 WEBRTC_TCP_PORT 配置
+        listen $WEBRTC_TCP_PORT;
+    }
 }
 
 vhost __defaultVhost__ {
