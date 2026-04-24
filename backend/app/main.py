@@ -63,6 +63,36 @@ app = FastAPI(
     redoc_url="/api/redoc" if settings.debug else None,
 )
 
+# Redirect non-business requests from publish domain to public domain
+@app.middleware("http")
+async def redirect_publish_to_public(request: Request, call_next):
+    """Redirect non-WHIP requests from PUBLISH_BASE_URL to PUBLIC_BASE_URL.
+
+    PUBLISH_BASE_URL is for streaming only (WHIP/RTMP/SRT). If users accidentally
+    visit it for other purposes, redirect them to the main site.
+    """
+    if settings.publish_base_url and settings.public_base_url:
+        # Extract host from PUBLISH_BASE_URL (remove scheme and path)
+        publish_host = settings.publish_base_url.strip()
+        if "://" in publish_host:
+            publish_host = publish_host.split("://", 1)[1]
+        publish_host = publish_host.split("/", 1)[0].lower()
+
+        # Check if request is to publish domain
+        request_host = request.headers.get("host", "").lower()
+        if request_host == publish_host:
+            # Allow WHIP publish requests
+            if not request.url.path.startswith("/rtc/v1/whip"):
+                # Redirect to public domain
+                redirect_url = f"{settings.public_base_url.rstrip('/')}{request.url.path}"
+                if request.url.query:
+                    redirect_url += f"?{request.url.query}"
+                from fastapi.responses import RedirectResponse
+                return RedirectResponse(url=redirect_url, status_code=302)
+
+    return await call_next(request)
+
+
 # CORS
 origins = [o.strip() for o in settings.allowed_origins.split(",") if o.strip()]
 app.add_middleware(

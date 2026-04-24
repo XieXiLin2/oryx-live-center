@@ -369,7 +369,24 @@ vhost __defaultVhost__ {
 }
 ```
 
-### 6. 防火墙配置
+### 6. 自动重定向
+
+后端已配置自动重定向功能：当用户访问推流站（`live-push.example.com`）的非 WHIP 推流请求时，会自动 302 重定向到主站（`live.example.com`）。
+
+**重定向规则：**
+- 访问 `/rtc/v1/whip/` 路径：正常处理（WHIP 推流）
+- 访问其他路径：自动重定向到主站对应路径
+
+**示例：**
+```
+https://live-push.example.com/           → 302 → https://live.example.com/
+https://live-push.example.com/admin      → 302 → https://live.example.com/admin
+https://live-push.example.com/rtc/v1/whip/?app=live&stream=demo  → 正常处理（不重定向）
+```
+
+这样可以避免用户误访问推流站时看到错误页面。
+
+### 7. 防火墙配置
 
 确保以下端口开放：
 
