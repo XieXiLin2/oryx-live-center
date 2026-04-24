@@ -54,7 +54,6 @@ VIEWER_SWEEP_INTERVAL_SECONDS = 10
 VIEWER_HEARTBEAT_TIMEOUT_SECONDS = 40
 
 
-
 async def _reconcile_once(db: AsyncSession) -> None:
     now = dt.datetime.now(dt.timezone.utc)
 
@@ -75,21 +74,17 @@ async def _reconcile_once(db: AsyncSession) -> None:
     # comes up empty — doing so turns a stray pull attempt into a false
     # "live" signal for the entire room.
     publishing_streams: set[str] = {
-        s.get("name", "") for s in srs_streams
-        if s.get("name") and srs_client.stream_is_publishing(s)
+        s.get("name", "") for s in srs_streams if s.get("name") and srs_client.stream_is_publishing(s)
     }
 
     # Set of all active SRS client IDs (both publishers & players).
     live_client_ids: set[str] = {str(c.get("id", "")) for c in srs_clients if c.get("id")}
 
     # -------- 1. Close orphan publish sessions --------
-    result = await db.execute(
-        select(StreamPublishSession).where(StreamPublishSession.ended_at.is_(None))
-    )
+    result = await db.execute(select(StreamPublishSession).where(StreamPublishSession.ended_at.is_(None)))
     for sess in result.scalars().all():
-        still_alive = (
-            sess.stream_name in publishing_streams
-            and (not sess.srs_client_id or sess.srs_client_id in live_client_ids)
+        still_alive = sess.stream_name in publishing_streams and (
+            not sess.srs_client_id or sess.srs_client_id in live_client_ids
         )
         if still_alive:
             continue
@@ -98,7 +93,9 @@ async def _reconcile_once(db: AsyncSession) -> None:
             sess.duration_seconds = max(0, int((now - sess.started_at).total_seconds()))
         logger.info(
             "Reconciler: closed orphan publish session stream=%s client=%s dur=%ss",
-            sess.stream_name, sess.srs_client_id, sess.duration_seconds,
+            sess.stream_name,
+            sess.srs_client_id,
+            sess.duration_seconds,
         )
 
     await db.flush()
@@ -154,9 +151,7 @@ async def _sweep_viewer_sessions_once(db: AsyncSession) -> set[str]:
     cutoff = now - dt.timedelta(seconds=VIEWER_HEARTBEAT_TIMEOUT_SECONDS)
 
     result = await db.execute(
-        select(ViewerSession)
-        .where(ViewerSession.ended_at.is_(None))
-        .where(ViewerSession.last_heartbeat_at < cutoff)
+        select(ViewerSession).where(ViewerSession.ended_at.is_(None)).where(ViewerSession.last_heartbeat_at < cutoff)
     )
 
     touched: set[str] = set()
@@ -170,7 +165,9 @@ async def _sweep_viewer_sessions_once(db: AsyncSession) -> set[str]:
         touched.add(row.stream_name)
         logger.info(
             "Reconciler: swept stale viewer session key=%s stream=%s dur=%ss",
-            row.session_key, row.stream_name, row.duration_seconds,
+            row.session_key,
+            row.stream_name,
+            row.duration_seconds,
         )
     await db.flush()
     return touched

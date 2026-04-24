@@ -117,12 +117,14 @@ async def on_publish(request: Request, db: AsyncSession = Depends(get_db)) -> di
     config.viewer_count = 0
     config.last_publish_at = dt.datetime.now(dt.timezone.utc)
 
-    db.add(StreamPublishSession(
-        srs_client_id=client_id,
-        stream_name=stream_name,
-        client_ip=ip,
-        started_at=dt.datetime.now(dt.timezone.utc),
-    ))
+    db.add(
+        StreamPublishSession(
+            srs_client_id=client_id,
+            stream_name=stream_name,
+            client_ip=ip,
+            started_at=dt.datetime.now(dt.timezone.utc),
+        )
+    )
     await db.flush()
     return ALLOW
 

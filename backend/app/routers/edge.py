@@ -68,13 +68,9 @@ async def list_playback_sources(
     )
 
     result = await db.execute(
-        select(EdgeNode)
-        .where(EdgeNode.enabled.is_(True))
-        .order_by(EdgeNode.sort_order, EdgeNode.id)
+        select(EdgeNode).where(EdgeNode.enabled.is_(True)).order_by(EdgeNode.sort_order, EdgeNode.id)
     )
-    edges = [
-        EdgeNodePublicResponse.model_validate(e) for e in result.scalars().all()
-    ]
+    edges = [EdgeNodePublicResponse.model_validate(e) for e in result.scalars().all()]
     return PlaybackSourcesResponse(origin=origin, edges=edges)
 
 
@@ -91,9 +87,7 @@ async def list_edge_nodes(
     db: AsyncSession = Depends(get_db),
     _admin: User = Depends(require_admin),
 ) -> list[EdgeNodeResponse]:
-    result = await db.execute(
-        select(EdgeNode).order_by(EdgeNode.sort_order, EdgeNode.id)
-    )
+    result = await db.execute(select(EdgeNode).order_by(EdgeNode.sort_order, EdgeNode.id))
     return [EdgeNodeResponse.model_validate(e) for e in result.scalars().all()]
 
 
@@ -112,9 +106,7 @@ async def create_edge_node(
     # Uniqueness check.
     existing = await db.execute(select(EdgeNode).where(EdgeNode.slug == slug))
     if existing.scalar_one_or_none() is not None:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail="Slug already exists"
-        )
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Slug already exists")
 
     node = EdgeNode(
         slug=slug,

@@ -204,7 +204,6 @@ class PlaybackSourcesResponse(BaseModel):
     edges: list[EdgeNodePublicResponse] = []
 
 
-
 # ---- Stream Publish / Viewer Statistics ----
 class StreamPublishSessionResponse(BaseModel):
     id: int

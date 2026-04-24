@@ -117,9 +117,7 @@ async def websocket_chat(
             data = await websocket.receive_text()
 
             if not user:
-                await websocket.send_json(
-                    {"type": "error", "content": "Authentication required to send messages"}
-                )
+                await websocket.send_json({"type": "error", "content": "Authentication required to send messages"})
                 continue
 
             if user.is_banned:

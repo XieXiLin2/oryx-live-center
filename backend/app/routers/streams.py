@@ -8,12 +8,9 @@ from typing import Optional
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from fastapi import status as _status  # noqa: F401
-
-from sqlalchemy import func
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import srs_client
 from app.auth import get_current_user, require_admin
@@ -106,13 +103,18 @@ def _build_publish_srt_url(stream_name: str, secret: str) -> Optional[str]:
         streamid += f",secret={secret}"
     # urlencode would over-escape the ``#!``; manual encode of only commas / spaces.
     from urllib.parse import quote
+
     return f"srt://{host}:{settings.publish_srt_port}?streamid={quote(streamid, safe='=:,#!')}"
 
 
 def _build_publish_whip_url(stream_name: str, secret: str) -> Optional[str]:
-    # WHIP must use the actual server URL, not publish_base_url or CDN.
-    # WebRTC signaling requires direct connection to SRS, CDNs don't support WHIP protocol.
-    base = settings.public_base_url.rstrip("/") if settings.public_base_url else ""
+    """Build WHIP publish URL using publish_base_url (direct to origin, not CDN).
+
+    WHIP must bypass CDN and connect directly to the origin server because:
+    1. WebRTC uses UDP for media transport, CDNs only support HTTP/HTTPS
+    2. ICE candidate exchange requires direct network path to SRS
+    """
+    base = _publish_whip_base()
     if not base:
         return None
     params: dict[str, str] = {"app": settings.srs_app, "stream": stream_name}
@@ -126,7 +128,6 @@ def _fill_publish_urls(resp: StreamConfigResponse, stream_name: str, secret: str
     resp.publish_srt_url = _build_publish_srt_url(stream_name, secret)
     resp.publish_whip_url = _build_publish_whip_url(stream_name, secret)
     return resp
-
 
 
 # ---------------------------------------------------------------------------
@@ -254,8 +255,7 @@ async def get_stream_stats(
 
     # Lifetime totals.
     total_plays_q = await db.execute(
-        select(func.count(ViewerSession.id))
-        .where(ViewerSession.stream_name == stream_name)
+        select(func.count(ViewerSession.id)).where(ViewerSession.stream_name == stream_name)
     )
     total_plays: int = total_plays_q.scalar() or 0
 
@@ -263,6 +263,7 @@ async def get_stream_stats(
     # extrapolated to (now - started_at) so the total doesn't appear frozen
     # while a viewer is still watching.
     import datetime as _dt
+
     now = _dt.datetime.now(_dt.timezone.utc)
 
     closed_sum_q = await db.execute(
@@ -310,9 +311,7 @@ async def get_stream_stats(
         try:
             from app.routers.viewer import manager as _viewer_manager
 
-            peak_concurrent = max(
-                _viewer_manager.peak_viewers(stream_name), current_viewers
-            )
+            peak_concurrent = max(_viewer_manager.peak_viewers(stream_name), current_viewers)
         except Exception:
             peak_concurrent = current_viewers
 
@@ -321,10 +320,7 @@ async def get_stream_stats(
     # truth; mere presence of a stream row only means SRS allocated a slot
     # (which it does on first pull attempt too).
     live_rows = await srs_client.list_streams()
-    is_live = any(
-        r.get("name") == stream_name and srs_client.stream_is_publishing(r)
-        for r in live_rows
-    )
+    is_live = any(r.get("name") == stream_name and srs_client.stream_is_publishing(r) for r in live_rows)
 
     # Current session duration ("已开播时长"): how long the *current* broadcast
     # has been running. 0 when offline.
@@ -338,8 +334,9 @@ async def get_stream_stats(
 
     # Lifetime broadcast time — all completed publish sessions plus current one.
     total_live_q = await db.execute(
-        select(func.coalesce(func.sum(StreamPublishSession.duration_seconds), 0))
-        .where(StreamPublishSession.stream_name == stream_name)
+        select(func.coalesce(func.sum(StreamPublishSession.duration_seconds), 0)).where(
+            StreamPublishSession.stream_name == stream_name
+        )
     )
     total_live_seconds = int(total_live_q.scalar() or 0) + current_live_duration_seconds
 
@@ -459,9 +456,7 @@ async def get_chat_config(stream_name: str, db: AsyncSession = Depends(get_db)) 
 # ---------------------------------------------------------------------------
 
 
-async def _build_liveness_map(
-    db: AsyncSession, stream_names: list[str]
-) -> dict[str, bool]:
+async def _build_liveness_map(db: AsyncSession, stream_names: list[str]) -> dict[str, bool]:
     """Return ``{stream_name: is_live}`` authoritatively derived from SRS.
 
     ``list_streams`` returns ``[]`` on error, so we distinguish "SRS reachable
@@ -472,9 +467,7 @@ async def _build_liveness_map(
     live_rows = await srs_client.list_streams()
     live_map: dict[str, bool] = {}
     if live_rows:
-        by_name: dict[str, dict] = {
-            r.get("name", ""): r for r in live_rows if r.get("name")
-        }
+        by_name: dict[str, dict] = {r.get("name", ""): r for r in live_rows if r.get("name")}
         for name in stream_names:
             live_map[name] = srs_client.stream_is_publishing(by_name.get(name))
         return live_map
@@ -528,9 +521,7 @@ async def _apply_runtime_overrides(
         item.is_live = is_live
         # Don't show ghost viewers while the stream is offline.
         item.viewer_count = open_map.get(cfg.stream_name, 0) if is_live else 0
-        item.total_play_count = total_map.get(
-            cfg.stream_name, item.total_play_count
-        )
+        item.total_play_count = total_map.get(cfg.stream_name, item.total_play_count)
 
 
 @router.get("/config", response_model=list[StreamConfigResponse])
@@ -571,9 +562,7 @@ async def get_stream_config(
     :func:`list_stream_configs` so the detail page never disagrees with the
     listing / dashboard.
     """
-    result = await db.execute(
-        select(StreamConfig).where(StreamConfig.stream_name == stream_name)
-    )
+    result = await db.execute(select(StreamConfig).where(StreamConfig.stream_name == stream_name))
     config = result.scalar_one_or_none()
     if config is None:
         raise HTTPException(status_code=404, detail="Stream config not found")
@@ -597,9 +586,7 @@ async def create_stream_config(
     supplied. Fails with 409 if the stream already exists so the caller can
     switch to an update flow.
     """
-    result = await db.execute(
-        select(StreamConfig).where(StreamConfig.stream_name == stream_name)
-    )
+    result = await db.execute(select(StreamConfig).where(StreamConfig.stream_name == stream_name))
     if result.scalar_one_or_none() is not None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -613,9 +600,7 @@ async def create_stream_config(
         publish_secret=request.publish_secret or secrets.token_urlsafe(16),
         watch_token=request.watch_token or secrets.token_urlsafe(24),
         chat_enabled=request.chat_enabled if request.chat_enabled is not None else True,
-        webrtc_play_enabled=(
-            request.webrtc_play_enabled if request.webrtc_play_enabled is not None else True
-        ),
+        webrtc_play_enabled=(request.webrtc_play_enabled if request.webrtc_play_enabled is not None else True),
     )
     db.add(config)
     await db.flush()
@@ -625,7 +610,6 @@ async def create_stream_config(
 
 
 @router.put("/config/{stream_name}", response_model=StreamConfigResponse)
-
 async def update_stream_config(
     stream_name: str,
     request: StreamConfigRequest,
@@ -697,7 +681,6 @@ async def rotate_watch_token(
     await db.refresh(config)
     item = StreamConfigResponse.model_validate(config)
     return _fill_publish_urls(item, config.stream_name, config.publish_secret)
-
 
 
 @router.delete("/config/{stream_name}")

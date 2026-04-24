@@ -85,8 +85,6 @@ app.include_router(edge.admin_router)
 app.include_router(branding.router)
 
 
-
-
 @app.get("/api/health")
 async def health_check() -> dict[str, str]:
     return {"status": "ok", "app": settings.app_name}

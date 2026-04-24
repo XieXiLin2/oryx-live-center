@@ -24,7 +24,6 @@ class Settings(BaseSettings):
     site_logo_url: str = ""
     site_copyright: str = "© {year} SRS Live Center. All rights reserved."
 
-
     # Public base URL — what the end user / browser sees (Nginx front-facing).
     # Used to construct play URLs for FLV / WebRTC WHEP.
     # Example: https://live.example.com
@@ -43,7 +42,6 @@ class Settings(BaseSettings):
     # Ports advertised for RTMP / SRT publish URLs in the admin UI.
     publish_rtmp_port: int = 1935
     publish_srt_port: int = 10080
-
 
     # Database
     database_url: str = "sqlite+aiosqlite:///./data/app.db"

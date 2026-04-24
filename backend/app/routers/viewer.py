@@ -145,9 +145,7 @@ async def _compute_stats(stream_name: str) -> dict:
     the same ``StreamStats`` interface.
     """
     async with async_session() as db:
-        cfg_res = await db.execute(
-            select(StreamConfig).where(StreamConfig.stream_name == stream_name)
-        )
+        cfg_res = await db.execute(select(StreamConfig).where(StreamConfig.stream_name == stream_name))
         cfg = cfg_res.scalar_one_or_none()
 
         current_q = await db.execute(
@@ -158,9 +156,7 @@ async def _compute_stats(stream_name: str) -> dict:
         current_viewers = int(current_q.scalar() or 0)
 
         total_plays_q = await db.execute(
-            select(func.count(ViewerSession.id)).where(
-                ViewerSession.stream_name == stream_name
-            )
+            select(func.count(ViewerSession.id)).where(ViewerSession.stream_name == stream_name)
         )
         total_plays = int(total_plays_q.scalar() or 0)
 
@@ -208,25 +204,20 @@ async def _compute_stats(stream_name: str) -> dict:
             started = active_pub.started_at
             if started.tzinfo is None:
                 started = started.replace(tzinfo=dt.timezone.utc)
-            current_live_duration_seconds = max(
-                0, int((now - started).total_seconds())
-            )
+            current_live_duration_seconds = max(0, int((now - started).total_seconds()))
             current_session_started_at = active_pub.started_at.isoformat()
 
         total_live_q = await db.execute(
-            select(func.coalesce(func.sum(StreamPublishSession.duration_seconds), 0))
-            .where(StreamPublishSession.stream_name == stream_name)
+            select(func.coalesce(func.sum(StreamPublishSession.duration_seconds), 0)).where(
+                StreamPublishSession.stream_name == stream_name
+            )
         )
-        total_live_seconds = (
-            int(total_live_q.scalar() or 0) + current_live_duration_seconds
-        )
+        total_live_seconds = int(total_live_q.scalar() or 0) + current_live_duration_seconds
 
         # Peak concurrent viewers for the *current* live session: take the max
         # of (in-memory current-session peak, current viewers). In-memory value
         # is cleared when the stream goes offline (reconciler resets it).
-        peak_session_viewers = max(
-            manager.peak_viewers(stream_name), current_viewers
-        )
+        peak_session_viewers = max(manager.peak_viewers(stream_name), current_viewers)
 
         return {
             "stream_name": stream_name,
@@ -239,12 +230,8 @@ async def _compute_stats(stream_name: str) -> dict:
             "peak_session_viewers": peak_session_viewers,
             "current_live_duration_seconds": current_live_duration_seconds,
             "total_live_seconds": total_live_seconds,
-            "last_publish_at": cfg.last_publish_at.isoformat()
-            if cfg and cfg.last_publish_at
-            else None,
-            "last_unpublish_at": cfg.last_unpublish_at.isoformat()
-            if cfg and cfg.last_unpublish_at
-            else None,
+            "last_publish_at": cfg.last_publish_at.isoformat() if cfg and cfg.last_publish_at else None,
+            "last_unpublish_at": cfg.last_unpublish_at.isoformat() if cfg and cfg.last_unpublish_at else None,
             "current_session_started_at": current_session_started_at,
         }
 
@@ -278,9 +265,7 @@ async def websocket_viewer(
     """WebSocket: one connection per actively-watching player."""
     # Resolve room config + effective user.
     async with async_session() as db:
-        cfg_res = await db.execute(
-            select(StreamConfig).where(StreamConfig.stream_name == stream_name)
-        )
+        cfg_res = await db.execute(select(StreamConfig).where(StreamConfig.stream_name == stream_name))
         cfg = cfg_res.scalar_one_or_none()
 
     user = await _load_user(token)
@@ -384,9 +369,7 @@ async def websocket_viewer(
         now = dt.datetime.now(dt.timezone.utc)
         try:
             async with async_session() as db:
-                res = await db.execute(
-                    select(ViewerSession).where(ViewerSession.session_key == session_key)
-                )
+                res = await db.execute(select(ViewerSession).where(ViewerSession.session_key == session_key))
                 row = res.scalar_one_or_none()
                 if row is not None and row.ended_at is None:
                     row.ended_at = now
@@ -394,9 +377,7 @@ async def websocket_viewer(
                     if started is not None and started.tzinfo is None:
                         started = started.replace(tzinfo=dt.timezone.utc)
                     if started is not None:
-                        row.duration_seconds = max(
-                            0, int((now - started).total_seconds())
-                        )
+                        row.duration_seconds = max(0, int((now - started).total_seconds()))
                     await db.commit()
         except Exception as e:
             logger.warning("viewer ws close-session failed key=%s: %s", session_key, e)

@@ -85,8 +85,16 @@ def _format_copyright(raw: str) -> str:
 async def get_branding(db: AsyncSession = Depends(get_db)) -> BrandingResponse:
     """Public endpoint: no auth required."""
     stored = await _load_map(
-        db, [_SITE_NAME_KEY, _LOGO_URL_KEY, _COPYRIGHT_KEY, _OFFLINE_PLACEHOLDER_KEY,
-             _ICP_FILING_KEY, _MPS_FILING_KEY, _MOEICP_FILING_KEY]
+        db,
+        [
+            _SITE_NAME_KEY,
+            _LOGO_URL_KEY,
+            _COPYRIGHT_KEY,
+            _OFFLINE_PLACEHOLDER_KEY,
+            _ICP_FILING_KEY,
+            _MPS_FILING_KEY,
+            _MOEICP_FILING_KEY,
+        ],
     )
     # Env defaults (from config.Settings) serve as fallback until the admin
     # customises things from the UI for the first time.
