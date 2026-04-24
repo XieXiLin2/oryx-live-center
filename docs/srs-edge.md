@@ -154,12 +154,53 @@ services:
 
 ```bash
 export CANDIDATE=<本 Edge 公网 IP>
+export WEBRTC_UDP_PORT=8000
+export WEBRTC_TCP_PORT=8000
+export WEBRTC_IP_FAMILY=ipv4
+export WEBRTC_PROTOCOL=udp
 docker compose up -d
 ```
 
 ---
 
-## 四、一键部署脚本
+## 四、防火墙配置
+
+确保 Edge 节点开放以下端口：
+
+| 端口 | 协议 | 用途 | 是否需要公网访问 |
+| --- | --- | --- | --- |
+| 443 | TCP | HTTPS（Nginx 反代） | ✅ 是 |
+| 1935 | TCP | RTMP 回源（连接 Origin） | ❌ 否（仅需访问 Origin） |
+| 8080 | TCP | HTTP-FLV / HLS | ❌ 否（通过 Nginx 反代） |
+| 1985 | TCP | SRS API | ❌ 否（内部使用） |
+| ${WEBRTC_UDP_PORT} | UDP | WebRTC 媒体传输 | ✅ 是 |
+| ${WEBRTC_TCP_PORT} | TCP | WebRTC TCP 传输（可选） | ✅ 是（仅当 protocol 为 tcp 或 all） |
+
+**重要说明：**
+- WebRTC UDP 端口（默认 8000）必须对公网开放，用于观众的 WebRTC 播放
+- 如果配置了 WebRTC TCP 传输（`WEBRTC_PROTOCOL=tcp` 或 `all`），还需要开放 TCP 端口
+- RTMP 1935 端口只需要能访问 Origin 节点，不需要对公网开放
+- 其他端口（8080, 1985）只需内部访问，通过 Nginx 反代到公网
+
+**防火墙配置示例（iptables）：**
+
+```bash
+# 允许 HTTPS
+iptables -A INPUT -p tcp --dport 443 -j ACCEPT
+
+# 允许 WebRTC UDP
+iptables -A INPUT -p udp --dport 8000 -j ACCEPT
+
+# 如果使用 WebRTC TCP，取消下面的注释
+# iptables -A INPUT -p tcp --dport 8000 -j ACCEPT
+
+# 允许访问 Origin 的 RTMP 端口（出站规则）
+iptables -A OUTPUT -p tcp --dport 1935 -d <ORIGIN_IP> -j ACCEPT
+```
+
+---
+
+## 五、一键部署脚本
 
 仓库提供 [`deploy/srs-edge-setup.sh`](../deploy/srs-edge-setup.sh) 自动：
 
@@ -198,7 +239,7 @@ sudo ORIGIN_HOST=origin.example.com \
 
 ---
 
-## 五、前端如何让观众走 Edge
+## 六、前端如何让观众走 Edge
 
 前端只需把 `PUBLIC_BASE_URL` 指向 Edge 域名（或 CDN），播放地址会自动指向 Edge：
 
@@ -209,7 +250,7 @@ sudo ORIGIN_HOST=origin.example.com \
 
 ---
 
-## 六、常见问题
+## 七、常见问题
 
 **Q1：私有直播的 token 会在 Edge 生效吗？**
 
