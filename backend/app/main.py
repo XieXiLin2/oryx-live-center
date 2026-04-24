@@ -63,6 +63,7 @@ app = FastAPI(
     redoc_url="/api/redoc" if settings.debug else None,
 )
 
+
 # Redirect non-business requests from publish domain to public domain
 @app.middleware("http")
 async def redirect_publish_to_public(request: Request, call_next):
@@ -88,6 +89,7 @@ async def redirect_publish_to_public(request: Request, call_next):
                 if request.url.query:
                     redirect_url += f"?{request.url.query}"
                 from fastapi.responses import RedirectResponse
+
                 return RedirectResponse(url=redirect_url, status_code=302)
 
     return await call_next(request)
