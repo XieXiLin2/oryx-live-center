@@ -157,7 +157,12 @@ const AppLayout: React.FC = () => {
           </Text>
           <Menu
             mode="horizontal"
-            selectedKeys={[location.pathname === '/' ? '/' : `/${location.pathname.split('/')[1]}`]}
+            selectedKeys={[
+              location.pathname === '/' ? '/' :
+              location.pathname.startsWith('/admin') ? '/admin' :
+              location.pathname.startsWith('/live') ? '/' :
+              `/${location.pathname.split('/')[1]}`
+            ]}
             items={menuItems}
             onClick={({ key }) => navigate(key)}
             style={{ border: 'none', marginLeft: 16 }}

@@ -1,0 +1,31 @@
+version: '3.8'
+
+services:
+  transcode-node:
+    build: .
+    container_name: transcode-node-01
+    restart: unless-stopped
+    environment:
+      - NODE_ID=transcode-node-01
+      - NODE_NAME=Transcode Node 01
+      - NODE_REGION=beijing
+      - MANAGER_URL=http://app:8000
+      - MANAGER_API_KEY=${MANAGER_API_KEY}
+      - SRS_ORIGIN_URL=rtmp://srs:1935
+      - MAX_TASKS=4
+    volumes:
+      - ./logs:/app/logs
+      - ./config.yaml:/app/config.yaml
+    networks:
+      - srs-network
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+networks:
+  srs-network:
+    external: true

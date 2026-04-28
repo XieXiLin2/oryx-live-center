@@ -20,6 +20,10 @@ const EdgeManage = lazy(() => import('./pages/admin/EdgeManage'));
 const StreamDetail = lazy(() => import('./pages/admin/StreamDetail'));
 const StreamsManage = lazy(() => import('./pages/admin/StreamsManage'));
 const UsersManage = lazy(() => import('./pages/admin/UsersManage'));
+const TranscodeTasks = lazy(() => import('./pages/admin/TranscodeTasks'));
+const TranscodeProfiles = lazy(() => import('./pages/admin/TranscodeProfiles'));
+const TranscodeNodes = lazy(() => import('./pages/admin/TranscodeNodes'));
+const NotFound = lazy(() => import('./pages/NotFound'));
 
 
 const AppContent: React.FC = () => {
@@ -49,6 +53,9 @@ const AppContent: React.FC = () => {
             <Route path="streams" element={<StreamsManage />} />
             <Route path="streams/:name" element={<StreamDetail />} />
             <Route path="edge-nodes" element={<EdgeManage />} />
+            <Route path="transcode-tasks" element={<TranscodeTasks />} />
+            <Route path="transcode-profiles" element={<TranscodeProfiles />} />
+            <Route path="transcode-nodes" element={<TranscodeNodes />} />
             <Route path="sessions" element={<Sessions />} />
 
             <Route path="srs-clients" element={<SrsClients />} />
@@ -56,6 +63,7 @@ const AppContent: React.FC = () => {
             <Route path="settings" element={<Settings />} />
           </Route>
         </Route>
+        <Route path="*" element={<NotFound />} />
       </Routes>
     </Suspense>
   );

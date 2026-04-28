@@ -1,0 +1,23 @@
+node:
+  id: ${NODE_ID:-transcode-node-01}
+  name: ${NODE_NAME:-Transcode Node 01}
+  region: ${NODE_REGION:-beijing}
+  max_tasks: ${MAX_TASKS:-4}
+
+manager:
+  url: ${MANAGER_URL:-http://localhost:8000}
+  api_key: ${MANAGER_API_KEY}
+  heartbeat_interval: 10  # seconds
+
+srs:
+  origin_url: ${SRS_ORIGIN_URL:-rtmp://localhost:1935}
+  app: live
+
+ffmpeg:
+  preset: veryfast
+  tune: zerolatency
+  gpu_acceleration: false  # Set to true to use NVENC
+
+monitoring:
+  enabled: true
+  interval: 5  # seconds

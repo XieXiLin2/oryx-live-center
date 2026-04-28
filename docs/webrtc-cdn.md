@@ -116,6 +116,165 @@ CANDIDATE=<SRS 服务器公网 IP>
 - `WEBRTC_PROTOCOL`：传输协议，可选 `udp`（默认）、`tcp` 或 `all`（同时支持 UDP 和 TCP）
 - `CANDIDATE`：SRS 服务器的公网 IP，用于 WebRTC ICE 候选交换
 
+#### WebRTC 端口配置详解
+
+**端口配置表：**
+
+| 环境变量 | 默认值 | 用途 | 是否必需 |
+|---------|--------|------|---------|
+| `WEBRTC_UDP_PORT` | 8000 | UDP 媒体传输（RTP/RTCP） | 是 |
+| `WEBRTC_TCP_PORT` | 0 | TCP 媒体传输（备用） | 仅当使用 TCP 时 |
+
+**重要说明：** `WEBRTC_TCP_PORT=0` 表示"使用与 UDP 相同的端口"。这是默认配置，适用于大多数部署场景。
+
+**端口配置示例：**
+
+1. **标准 UDP 配置（推荐）**
+```env
+WEBRTC_UDP_PORT=8000
+WEBRTC_TCP_PORT=0
+WEBRTC_PROTOCOL=udp
+```
+- 防火墙：开放 UDP 8000
+- 最佳性能，最低延迟
+- 适用于 95% 的用户
+
+2. **TCP 备用配置（兼容性最佳）**
+```env
+WEBRTC_UDP_PORT=8000
+WEBRTC_TCP_PORT=8001
+WEBRTC_PROTOCOL=all
+```
+- 防火墙：开放 UDP 8000 和 TCP 8001
+- 客户端优先尝试 UDP，UDP 被阻止时回退到 TCP
+- TCP 延迟略高，但兼容性更好
+
+3. **纯 TCP 配置（企业防火墙）**
+```env
+WEBRTC_UDP_PORT=8000
+WEBRTC_TCP_PORT=8000
+WEBRTC_PROTOCOL=tcp
+```
+- 防火墙：仅开放 TCP 8000
+- 延迟较高，但在 UDP 完全被阻止时可用
+
+#### 如何修改 WebRTC 端口
+
+**步骤 1：更新 `.env` 文件**
+```env
+WEBRTC_UDP_PORT=9000
+WEBRTC_TCP_PORT=0
+```
+
+**步骤 2：验证 `deploy/srs/srs.conf` 使用变量**
+配置文件应已包含：
+```nginx
+rtc_server {
+    listen          $WEBRTC_UDP_PORT;
+    tcp {
+        listen      $WEBRTC_TCP_PORT;
+    }
+}
+```
+
+**步骤 3：更新 `docker-compose.yml` 端口映射**
+```yaml
+ports:
+  - "${WEBRTC_UDP_PORT:-8000}:${WEBRTC_UDP_PORT:-8000}/udp"
+  - "${WEBRTC_TCP_PORT:-8000}:${WEBRTC_TCP_PORT:-8000}/tcp"
+```
+
+**步骤 4：更新防火墙规则**
+```bash
+# 允许新的 UDP 端口
+sudo ufw allow 9000/udp
+
+# 删除旧端口（如果更改）
+sudo ufw delete allow 8000/udp
+```
+
+**步骤 5：重启服务**
+```bash
+docker-compose down
+docker-compose up -d
+```
+
+#### 启用 WebRTC over TCP
+
+**何时使用 TCP 传输：**
+
+使用 TCP 传输的场景：
+- 企业防火墙阻止所有 UDP 流量
+- 网络存在严重的 UDP 丢包（>5%）
+- 在受限环境中测试
+- 用户报告"ICE connection failed"错误
+
+**权衡：**
+- ✅ 可穿透限制性防火墙
+- ✅ 连接建立更可靠
+- ❌ 延迟更高（通常增加 50-100ms）
+- ❌ 丢包情况下吞吐量较低
+
+**配置步骤：**
+
+**步骤 1：设置环境变量**
+```env
+# .env
+WEBRTC_PROTOCOL=all          # 同时启用 UDP 和 TCP
+WEBRTC_UDP_PORT=8000
+WEBRTC_TCP_PORT=8001         # 使用不同端口
+```
+
+**步骤 2：验证 SRS 配置**
+`deploy/srs/srs.conf` 应已包含：
+```nginx
+rtc_server {
+    enabled         on;
+    listen          $WEBRTC_UDP_PORT;
+    protocol        $WEBRTC_PROTOCOL;
+    
+    tcp {
+        enabled     off;  # 将通过环境变量设置为 on
+        listen      $WEBRTC_TCP_PORT;
+    }
+}
+```
+
+**步骤 3：更新防火墙**
+```bash
+# 允许 TCP 端口
+sudo ufw allow 8001/tcp
+
+# 验证两个端口都已开放
+sudo ufw status | grep 800
+```
+
+**步骤 4：重启并验证**
+```bash
+docker-compose restart srs
+
+# 检查 SRS 日志中的 TCP 监听器
+docker logs srs-live-center-srs | grep "rtc listen"
+# 应显示：rtc listen at tcp://0.0.0.0:8001
+```
+
+**测试 TCP 传输：**
+
+在浏览器控制台中测试：
+```javascript
+// 播放 WebRTC 流时，在浏览器控制台执行
+const pc = window.artplayer?.plugins?.webrtc?.pc;
+if (pc) {
+  pc.getStats().then(stats => {
+    stats.forEach(report => {
+      if (report.type === 'candidate-pair' && report.state === 'succeeded') {
+        console.log('传输协议:', report.protocol); // 应显示 'tcp' 或 'udp'
+      }
+    });
+  });
+}
+```
+
 ### 3. URL 生成逻辑
 
 #### WHIP 推流 URL（主播使用）
@@ -368,9 +527,11 @@ rtc_server {
     # TCP 配置（仅当 protocol 为 tcp 或 all 时需要）
     tcp {
         # 启用 WebRTC over TCP
-        # 当 WEBRTC_PROTOCOL 为 tcp 或 all 时设置为 on
+        # 当 WEBRTC_PROTOCOL=tcp 或 all 时，此处会通过环境变量自动设置为 on
+        # 当 WEBRTC_PROTOCOL=udp 时，保持 off（默认）
         enabled         off;
         # TCP 端口，必须与环境变量 WEBRTC_TCP_PORT 一致
+        # 如果 WEBRTC_TCP_PORT=0，则使用与 UDP 相同的端口
         listen          $WEBRTC_TCP_PORT;
     }
 }

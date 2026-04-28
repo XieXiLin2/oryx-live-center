@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import re
@@ -14,13 +15,9 @@ from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
 from starlette.responses import StreamingResponse
 
-import asyncio
-
 from app.config import settings
 from app.database import init_db
-from app.routers import admin, auth, branding, chat, edge, hooks, streams, viewer
-
-
+from app.routers import admin, auth, branding, chat, edge, hooks, streams, transcode, viewer
 from app.stats_reconciler import reconciler_loop
 
 logging.basicConfig(
@@ -115,6 +112,7 @@ app.include_router(viewer.router)
 app.include_router(edge.router)
 app.include_router(edge.admin_router)
 app.include_router(branding.router)
+app.include_router(transcode.router)
 
 
 @app.get("/api/health")

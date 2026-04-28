@@ -5,6 +5,7 @@ import {
   PlayCircleOutlined,
   SettingOutlined,
   TeamOutlined,
+  ThunderboltOutlined,
   VideoCameraOutlined,
 } from '@ant-design/icons';
 import { Layout, Menu, Result } from 'antd';
@@ -15,13 +16,16 @@ import { useAuth } from '../../store/auth';
 const { Sider, Content } = Layout;
 
 const items = [
-  { key: '/admin',              icon: <DashboardOutlined />,   label: '总览' },
-  { key: '/admin/streams',      icon: <VideoCameraOutlined />, label: '直播间管理' },
-  { key: '/admin/edge-nodes',   icon: <CloudServerOutlined />, label: 'Edge 节点' },
-  { key: '/admin/sessions',     icon: <PlayCircleOutlined />,  label: '播放统计' },
-  { key: '/admin/srs-clients',  icon: <AppstoreOutlined />,    label: 'SRS 客户端' },
-  { key: '/admin/users',        icon: <TeamOutlined />,        label: '用户管理' },
-  { key: '/admin/settings',     icon: <SettingOutlined />,     label: '系统设置' },
+  { key: '/admin',                      icon: <DashboardOutlined />,   label: '总览' },
+  { key: '/admin/streams',              icon: <VideoCameraOutlined />, label: '直播间管理' },
+  { key: '/admin/edge-nodes',           icon: <CloudServerOutlined />, label: 'Edge 节点' },
+  { key: '/admin/transcode-tasks',      icon: <ThunderboltOutlined />, label: '转码任务' },
+  { key: '/admin/transcode-profiles',   icon: <ThunderboltOutlined />, label: '转码配置' },
+  { key: '/admin/transcode-nodes',      icon: <ThunderboltOutlined />, label: '转码节点' },
+  { key: '/admin/sessions',             icon: <PlayCircleOutlined />,  label: '播放统计' },
+  { key: '/admin/srs-clients',          icon: <AppstoreOutlined />,    label: 'SRS 客户端' },
+  { key: '/admin/users',                icon: <TeamOutlined />,        label: '用户管理' },
+  { key: '/admin/settings',             icon: <SettingOutlined />,     label: '系统设置' },
 ];
 
 /**

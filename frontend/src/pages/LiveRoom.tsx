@@ -48,7 +48,7 @@ const LiveRoom: React.FC = () => {
   const [playData, setPlayData] = useState<StreamPlayResponse | null>(null);
   const [stats, setStats] = useState<StreamStats | null>(null);
   const [sources, setSources] = useState<PlaybackSources | null>(null);
-  const [selectedSource, setSelectedSource] = useState<string>('origin');
+  const [selectedSource] = useState<string>('origin');
   const viewerWsRef = useRef<WebSocket | null>(null);
 
   // Track live session for duration calculation
@@ -260,13 +260,50 @@ const LiveRoom: React.FC = () => {
     }
   }, [playData, sources, selectedSource]);
 
-  const sourceOptions = useMemo(() => {
-    const opts: { label: string; value: string }[] = [{ label: 'Origin', value: 'origin' }];
-    if (sources) {
-      sources.edges.forEach((e) => opts.push({ label: e.name, value: e.slug }));
-    }
-    return opts;
-  }, [sources]);
+  // Build quality options for ArtPlayer (edge node switching)
+  const qualityOptions = useMemo(() => {
+    if (!playData?.url || !sources || sources.edges.length === 0) return undefined;
+
+    const options = [
+      {
+        html: 'Origin',
+        url: playData.url,
+        default: selectedSource === 'origin',
+      },
+    ];
+
+    sources.edges.forEach((edge) => {
+      let edgeUrl = playData.url;
+      if (edge.base_url) {
+        if (/^https?:\/\//i.test(playData.url)) {
+          try {
+            const u = new URL(playData.url);
+            const eb = new URL(edge.base_url);
+            edgeUrl = `${eb.origin}${u.pathname}${u.search}${u.hash}`;
+          } catch {
+            edgeUrl = playData.url;
+          }
+        } else {
+          try {
+            const eb = new URL(edge.base_url);
+            const path = playData.url.startsWith('/') ? playData.url : `/${playData.url}`;
+            edgeUrl = `${eb.origin}${path}`;
+          } catch {
+            edgeUrl = playData.url;
+          }
+        }
+      }
+
+      options.push({
+        html: edge.name,
+        url: edgeUrl,
+        default: selectedSource === edge.slug,
+      });
+    });
+
+    return options.length > 1 ? options : undefined;
+  }, [playData, sources, selectedSource]);
+
 
   if (loading) {
     return (
@@ -301,14 +338,6 @@ const LiveRoom: React.FC = () => {
             }
             extra={
               <Space>
-                {sourceOptions.length > 1 && (
-                  <Select
-                    value={selectedSource}
-                    onChange={setSelectedSource}
-                    style={{ width: 160 }}
-                    options={sourceOptions}
-                  />
-                )}
                 <Select
                   value={selectedFormat}
                   onChange={(fmt) => handlePlay(stream, fmt)}
@@ -334,6 +363,7 @@ const LiveRoom: React.FC = () => {
               format={selectedFormat}
               isLive={stream.is_live}
               placeholderUrl={stream.offline_placeholder_url}
+              qualityOptions={qualityOptions}
             />
 
             <div style={{ padding: '8px 16px' }}>

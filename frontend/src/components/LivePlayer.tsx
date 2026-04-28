@@ -3,6 +3,12 @@ import artplayerPluginDocumentPip from 'artplayer-plugin-document-pip';
 import mpegts from 'mpegts.js';
 import React, { useEffect, useMemo, useRef } from 'react';
 
+interface QualityOption {
+  html: string;
+  url: string;
+  default?: boolean;
+}
+
 interface LivePlayerProps {
   url: string;
   /** 'flv' (HTTP-FLV via mpegts.js) or 'webrtc' (WHEP). */
@@ -11,6 +17,8 @@ interface LivePlayerProps {
   isLive: boolean;
   /** URL of placeholder content (image or video) to show when offline. */
   placeholderUrl?: string;
+  /** Quality options for edge node switching */
+  qualityOptions?: QualityOption[];
   style?: React.CSSProperties;
 }
 
@@ -55,7 +63,7 @@ async function playWebRTC(
   return pc;
 }
 
-const LivePlayer: React.FC<LivePlayerProps> = ({ url, format, isLive, placeholderUrl, style }) => {
+const LivePlayer: React.FC<LivePlayerProps> = ({ url, format, isLive, placeholderUrl, qualityOptions, style }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const artRef = useRef<Artplayer | null>(null);
   const mpegtsRef = useRef<ReturnType<typeof mpegts.createPlayer> | null>(null);
@@ -216,6 +224,11 @@ const LivePlayer: React.FC<LivePlayerProps> = ({ url, format, isLive, placeholde
         ],
       };
 
+      // Add quality switching if multiple options provided
+      if (qualityOptions && qualityOptions.length > 1) {
+        options.quality = qualityOptions;
+      }
+
       if (format === 'flv' && mpegts.isSupported()) {
         options.customType = {
           flv: (video: HTMLVideoElement, streamUrl: string) => {
@@ -262,7 +275,7 @@ const LivePlayer: React.FC<LivePlayerProps> = ({ url, format, isLive, placeholde
         }
       };
     }
-  }, [url, format, showPlaceholder, placeholderUrl, placeholderMediaType]);
+  }, [url, format, showPlaceholder, placeholderUrl, placeholderMediaType, qualityOptions]);
 
   return (
     <div
