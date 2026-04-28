@@ -21,7 +21,6 @@ RUN pip3 install --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY app/ ./app/
-COPY scripts/ ./scripts/
 COPY config.yaml .
 
 # Configure Supervisor
