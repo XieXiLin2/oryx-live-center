@@ -90,7 +90,10 @@ async def _reconcile_once(db: AsyncSession) -> None:
             continue
         sess.ended_at = now
         if sess.started_at:
-            sess.duration_seconds = max(0, int((now - sess.started_at).total_seconds()))
+            started = sess.started_at
+            if started.tzinfo is None:
+                started = started.replace(tzinfo=dt.timezone.utc)
+            sess.duration_seconds = max(0, int((now - started).total_seconds()))
         logger.info(
             "Reconciler: closed orphan publish session stream=%s client=%s dur=%ss",
             sess.stream_name,
