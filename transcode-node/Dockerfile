@@ -9,7 +9,7 @@ RUN apt-get update && apt-get install -y \
     && add-apt-repository ppa:savoury1/ffmpeg7 \
     && apt-get update && apt-get install -y \
     ffmpeg \
-    python3.12 \
+    python3 \
     python3-pip \
     supervisor \
     && rm -rf /var/lib/apt/lists/*
